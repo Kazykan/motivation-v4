@@ -1,0 +1,7 @@
+Django>=5.0,<6.0
+djangorestframework
+djangorestframework-simplejwt
+init-data-py
+psycopg2-binary
+django-cors-headers
+djangorestframework-simplejwt>=5.3.0
