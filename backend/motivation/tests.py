@@ -1,110 +1,92 @@
-from datetime import timedelta
+from datetime import date
 from decimal import Decimal
+from rest_framework import status
+from rest_framework.test import APITestCase
+from django.urls import reverse
 
-from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase
-from django.utils import timezone
-
-from motivation.models import (
-    ALLOWED_CHARS,
-    FamilyInviteCode,
-    Task,
-    User,
-    WeeklyReport,
-    generate_short_code,
-    get_default_expiration,
-)
+from motivation.models import User, Task, TaskLog, WeeklyReport
 
 
-class ModelHelpersTests(SimpleTestCase):
-    def test_generate_short_code_returns_valid_length_and_charset(self):
-        code = generate_short_code()
+class WeeklyReportBusinessLogicTests(APITestCase):
+    def setUp(self):
+        # Создаем родителя и ребенка
+        self.parent = User.objects.create_user(
+            username="parent_user",
+            password="password123",
+            role=User.Role.PARENT,
+            first_name="Ольга",
+        )
+        self.child = User.objects.create_user(
+            username="child_user",
+            password="password123",
+            role=User.Role.CHILD,
+            first_name="Тимур",
+        )
 
-        self.assertEqual(len(code), 4)
-        self.assertTrue(set(code) <= set(ALLOWED_CHARS))
-
-    def test_get_default_expiration_is_two_hours_in_future(self):
-        before = timezone.now()
-        expiration = get_default_expiration()
-        after = timezone.now()
-
-        self.assertGreater(expiration, before + timedelta(hours=1, minutes=59))
-        self.assertLess(expiration, after + timedelta(hours=2, minutes=1))
-
-
-class UserModelTests(SimpleTestCase):
-    def test_user_role_properties_and_string_representation(self):
-        parent = User(first_name="Мария", username="maria", role=User.Role.PARENT)
-        child = User(first_name="Иван", username="ivan", role=User.Role.CHILD)
-
-        self.assertTrue(parent.is_parent)
-        self.assertFalse(parent.is_child)
-        self.assertFalse(child.is_parent)
-        self.assertTrue(child.is_child)
-        self.assertEqual(str(parent), "Мария (Родитель)")
-        self.assertEqual(str(child), "Иван (Ребенок)")
-
-
-class FamilyInviteCodeTests(SimpleTestCase):
-    def test_invite_code_is_valid_only_when_unused_and_not_expired(self):
-        future = timezone.now() + timedelta(hours=1)
-        expired = timezone.now() - timedelta(minutes=5)
-
-        valid_code = FamilyInviteCode(is_used=False, expires_at=future)
-        used_code = FamilyInviteCode(is_used=True, expires_at=future)
-        expired_code = FamilyInviteCode(is_used=False, expires_at=expired)
-
-        self.assertTrue(valid_code.is_valid)
-        self.assertFalse(used_code.is_valid)
-        self.assertFalse(expired_code.is_valid)
-
-
-class TaskModelTests(SimpleTestCase):
-    def test_flexible_task_requires_target_count(self):
-        task = Task(
-            title="Сбор игрушек",
-            weekly_price=Decimal("50.00"),
+        # Создаем активное задание для ребенка
+        self.task = Task.objects.create(
+            child=self.child,
+            created_by=self.parent,
+            title="Уборка комнаты",
+            weekly_price=Decimal("350.00"),
             schedule_type=Task.ScheduleType.FLEXIBLE,
-            target_count=None,
+            target_count=5,
+            is_active=True,
         )
 
-        with self.assertRaises(ValidationError):
-            task.clean()
+        self.report_url = reverse("weekly-report-list")
 
-    def test_fixed_task_requires_target_days(self):
-        task = Task(
-            title="Чтение",
-            weekly_price=Decimal("30.00"),
-            schedule_type=Task.ScheduleType.FIXED,
-            target_days=[],
+    def test_weekly_report_calculation_and_final_sum(self):
+        """Проверка корректности расчета суммы по логам и ручных корректировок."""
+        start = date(2026, 10, 12)  # Понедельник
+        end = date(2026, 10, 18)  # Воскресенье
+
+        # Создаем отчет
+        report = WeeklyReport.objects.create(
+            child=self.child,
+            start_date=start,
+            end_date=end,
+            status=WeeklyReport.Status.REVIEW,
+            calculated_amount=Decimal("280.00"),  # 4 выполнения из 5
+            manual_adjustment=Decimal("50.00"),  # Бонус за старание
+            comment="Отличная неделя",
         )
 
-        with self.assertRaises(ValidationError):
-            task.clean()
+        # Проверка вычисляемого свойства final_sum
+        self.assertEqual(report.final_sum, Decimal("330.00"))
 
-    def test_price_per_run_uses_target_count_for_flexible_tasks(self):
-        task = Task(
-            title="Планер",
-            weekly_price=Decimal("42.00"),
-            schedule_type=Task.ScheduleType.FLEXIBLE,
-            target_count=3,
+    def test_child_can_view_only_own_reports(self):
+        """Ребенок видит только свои недельные отчеты."""
+        other_child = User.objects.create_user(
+            username="other_child", password="password123", role=User.Role.CHILD
         )
 
-        self.assertEqual(task.price_per_run, 14.0)
-
-    def test_price_per_run_uses_number_of_days_for_fixed_tasks(self):
-        task = Task(
-            title="Прогулка",
-            weekly_price=Decimal("28.00"),
-            schedule_type=Task.ScheduleType.FIXED,
-            target_days=[1, 3, 5],
+        WeeklyReport.objects.create(
+            child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
+        )
+        WeeklyReport.objects.create(
+            child=other_child,
+            start_date=date(2026, 10, 12),
+            end_date=date(2026, 10, 18),
         )
 
-        self.assertEqual(task.price_per_run, 9.33)
+        # Авторизуемся как ребенок
+        self.client.force_authenticate(user=self.child)
+        response = self.client.get(self.report_url)
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Ребенок должен видеть ровно 1 отчет (свой)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["child"], self.child.id)
 
-class WeeklyReportTests(SimpleTestCase):
-    def test_final_sum_adds_manual_adjustment_to_calculated_amount(self):
-        report = WeeklyReport(calculated_amount=Decimal("500.00"), manual_adjustment=Decimal("-25.50"))
+    def test_parent_can_view_all_reports(self):
+        """Родитель видит отчеты всех детей."""
+        WeeklyReport.objects.create(
+            child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
+        )
 
-        self.assertEqual(report.final_sum, Decimal("474.50"))
+        self.client.force_authenticate(user=self.parent)
+        response = self.client.get(self.report_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)

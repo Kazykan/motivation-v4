@@ -1,5 +1,5 @@
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
@@ -41,8 +41,10 @@ class User(AbstractUser):
     )
 
     # Авторизация без пароля
-    telegram_id = models.BigIntegerField(
-        unique=True, null=True, blank=True, verbose_name="Telegram ID"
+    telegram_id = (
+        models.BigIntegerField(
+            unique=True, null=True, blank=True, verbose_name="Telegram ID"
+        )
     )
     google_id = models.CharField(
         max_length=255, unique=True, null=True, blank=True, verbose_name="Google Sub ID"
@@ -51,11 +53,16 @@ class User(AbstractUser):
         max_length=255, unique=True, null=True, blank=True, verbose_name="Apple User ID"
     )
 
-    avatar_url = models.URLField(max_length=500, blank=True, null=True)
+    avatar_url = models.URLField(
+        max_length=500, blank=True, null=True
+    )
 
     class Meta:
         verbose_name = "Пользователь"
         verbose_name_plural = "Пользователи"
+
+    def get_role_display(self) -> str:
+        return str(dict(self.Role.choices).get(self.role, self.role))
 
     def __str__(self):
         return f"{self.first_name or self.username} ({self.get_role_display()})"
@@ -75,7 +82,9 @@ class FamilyGroup(models.Model):
     name = models.CharField(
         max_length=100, default="Моя семья", verbose_name="Название семьи"
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
 
     class Meta:
         verbose_name = "Семья"
@@ -150,6 +159,13 @@ class FamilyInviteCode(models.Model):
                     break
         super().save(*args, **kwargs)
 
+    def clean(self):
+        super().clean()
+        if self.created_by and not self.created_by.is_parent:
+            raise ValidationError(
+                "Только родитель может создавать инвайт-коды для приглашения."
+            )
+
 
 # ----------------------------------------------------------------------
 # 2. ШАБЛОН ЗАДАНИЯ (Task)
@@ -200,10 +216,8 @@ class Task(models.Model):
     )
 
     # Для FIXED: список дней [1, 3, 4, 7] (1=Пн, 7=Вс)
-    target_days = ArrayField(
-        models.PositiveSmallIntegerField(
-            validators=[MinValueValidator(1), MaxValueValidator(7)]
-        ),
+    target_days = models.JSONField(
+        default=list,
         null=True,
         blank=True,
         verbose_name="Дни недели (1-Пн, 7-Вс)",
@@ -213,6 +227,9 @@ class Task(models.Model):
         default=True, verbose_name="Активно в текущее время"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.title} ({self.child.username if self.child else 'Без ребенка'})"
 
     class Meta:
         verbose_name = "Задание"
