@@ -3,18 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Clock, CheckCircle2 } from "lucide-react"
+import { TaskCardProps } from "@/types/props"
 
-interface TaskCardProps {
-  task: {
-    id: number
-    title: string
-    description: string
-    price_per_run: number
-    schedule_type?: string
-  }
-  isSubmitting: boolean
-  onComplete: (taskId: number) => void
-}
 
 export function TaskCard({ task, isSubmitting, onComplete }: TaskCardProps) {
   return (

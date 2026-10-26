@@ -1,15 +1,7 @@
 // src/app/child/balance/_components/TaskLogCard.tsx
 import { Card, CardContent } from "@/components/ui/card"
+import { TaskLogCardProps } from "@/types/props"
 import { CheckCircle2 } from "lucide-react"
-
-interface TaskLogCardProps {
-  log: {
-    id: number
-    task_title?: string
-    date: string
-    earned?: number
-  }
-}
 
 export function TaskLogCard({ log }: TaskLogCardProps) {
   return (

@@ -1,35 +1,41 @@
+// src/app/parent/tasks/page.tsx
 "use client"
 
-import { useEffect, useState } from "react"
-import { parentApi } from "@/services/parentApi"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect } from "react"
+import { useTasks } from "@/hooks/useTasks"
+import { useChildren } from "@/hooks/useChildren"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Edit2, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
+import { TaskCardForParent } from "@/components/TaskCardForParent"
 import { TaskFormSheet } from "@/components/TaskFormSheet"
+import { cn } from "@/lib/utils"
 
 export default function ParentTasksPage() {
-  const [tasks, setTasks] = useState<any[]>([])
-  const [children, setChildren] = useState<any[]>([])
+  const [mounted, setMounted] = useState(false)
+  const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [selectedTask, setSelectedTask] = useState<any | null>(null)
 
-  const loadData = async () => {
-    try {
-      const [tasksData, childrenData] = await Promise.all([
-        parentApi.getTasks(),
-        parentApi.getChildren(),
-      ])
-      setTasks(tasksData)
-      setChildren(childrenData)
-    } catch (error) {
-      console.error(error)
-    }
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const parsedChildId = selectedChildId === "ALL" ? undefined : Number(selectedChildId)
+
+  const {
+    tasks,
+    isLoading: tasksLoading,
+    createTask,
+    updateTask,
+    deleteTask,
+  } = useTasks(parsedChildId)
+  const { children, isLoading: childrenLoading } = useChildren()
+
+  if (!mounted) {
+    return null
   }
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  const loading = tasksLoading || childrenLoading
 
   const handleCreateNew = () => {
     setSelectedTask(null)
@@ -43,66 +49,114 @@ export default function ParentTasksPage() {
 
   const handleDelete = async (id: number) => {
     try {
-      await parentApi.deleteTask(id)
-      loadData()
+      deleteTask(id)
     } catch (error) {
-      console.error("Ошибка удаления:", error)
+      console.error("Ошибка удаления задания:", error)
     }
   }
 
   const handleSubmitForm = async (formData: any) => {
     if (formData.id) {
-      await parentApi.updateTask(formData.id, formData)
+      updateTask({ id: formData.id, data: formData })
     } else {
-      await parentApi.createTask(formData)
+      createTask(formData)
     }
-    loadData()
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-12">
+    <div className="flex flex-col gap-6 pb-16">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-slate-900">Управление заданиями</h1>
+        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Управление заданиями</h1>
         <Button
           size="sm"
           onClick={handleCreateNew}
-          className="bg-amber-400 text-slate-900 hover:bg-amber-500"
+          className="bg-brand-primary text-brand-dark hover:bg-brand-primary-hover font-semibold cursor-pointer"
         >
           <Plus className="mr-1.5 h-4 w-4" />
           Создать
         </Button>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {tasks.map((task) => (
-          <Card key={task.id} className="border-slate-200">
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between">
-                <CardTitle className="text-sm font-semibold text-slate-900">{task.title}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="bg-amber-100 text-amber-800">
-                    {task.price_per_run} ₽
-                  </Badge>
-                  <Button variant="ghost" size="icon-xs" onClick={() => handleEdit(task)}>
-                    <Edit2 className="h-3.5 w-3.5 text-slate-500" />
-                  </Button>
-                  <Button variant="ghost" size="icon-xs" onClick={() => handleDelete(task.id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-rose-500" />
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-xs text-slate-600">{task.description}</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          onClick={() => setSelectedChildId("ALL")}
+          className={cn(
+            "rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+            selectedChildId === "ALL"
+              ? "bg-brand-dark text-white shadow-xs"
+              : "bg-white text-brand-muted border border-slate-200 hover:bg-slate-50",
+          )}
+        >
+          Все дети ({tasks.length})
+        </button>
+        {children.map((child: any) => {
+          const childIdStr = String(child.id)
+          const childTasksCount = tasks.filter(
+            (t) => String(t.child) === childIdStr || String(t.child_id) === childIdStr,
+          ).length
+
+          return (
+            <button
+              key={child.id}
+              onClick={() => setSelectedChildId(childIdStr)}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+                selectedChildId === childIdStr
+                  ? "bg-brand-dark text-white shadow-xs"
+                  : "bg-white text-brand-muted border border-slate-200 hover:bg-slate-50",
+              )}
+            >
+              {child.first_name || child.name || "Ребенок"} ({childTasksCount})
+            </button>
+          )
+        })}
       </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-sm text-brand-muted">Загрузка заданий...</div>
+      ) : tasks.length === 0 ? (
+        <div className="py-12 text-center text-sm text-brand-muted">
+          Нет заданий для отображения
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {tasks.map((task) => {
+            const currentChild = children.find(
+              (c) => String(c.id) === String(task.child || task.child_id),
+            )
+            const taskWithChildName = {
+              ...task,
+              child_name: currentChild?.first_name || currentChild?.name,
+            }
+
+            return (
+              <TaskCardForParent
+                key={task.id}
+                task={taskWithChildName}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            )
+          })}
+        </div>
+      )}
 
       <TaskFormSheet
         isOpen={isSheetOpen}
         onClose={() => setIsSheetOpen(false)}
-        taskToEdit={selectedTask}
+        taskToEdit={
+          selectedTask
+            ? {
+                ...selectedTask,
+                child_id:
+                  selectedTask.child ||
+                  selectedTask.child_id ||
+                  (selectedChildId !== "ALL" ? Number(selectedChildId) : undefined),
+              }
+            : selectedChildId !== "ALL"
+              ? ({ child_id: Number(selectedChildId) } as any)
+              : null
+        }
         childrenList={children}
         onSubmit={handleSubmitForm}
       />

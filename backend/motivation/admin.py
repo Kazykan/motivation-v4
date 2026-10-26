@@ -21,14 +21,33 @@ class CustomUserAdmin(UserAdmin):
     fieldsets = list(UserAdmin.fieldsets) + [
         (
             "Дополнительно",
-            {"fields": ("role", "telegram_id", "google_id", "apple_id", "avatar_url")},
+            {
+                "fields": (
+                    "role",
+                    "telegram_id",
+                    "google_id",
+                    "apple_id",
+                    "avatar_url",
+                    "birth_date",
+                    "gender",
+                )
+            },
         ),
     ]
     add_fieldsets = list(UserAdmin.add_fieldsets) + [
-        ("Дополнительно", {"fields": ("role", "telegram_id")}),
+        ("Дополнительно", {"fields": ("role", "telegram_id", "birth_date", "gender")}),
     ]
-    list_display = ("username", "email", "first_name", "last_name", "role", "is_staff")
-    list_filter = ("role", "is_staff", "is_active")
+    list_display = (
+        "username",
+        "email",
+        "first_name",
+        "last_name",
+        "role",
+        "is_staff",
+        "birth_date",
+        "gender",
+    )
+    list_filter = ("role", "is_staff", "is_active", "gender")
 
 
 class FamilyMembershipInline(admin.TabularInline):

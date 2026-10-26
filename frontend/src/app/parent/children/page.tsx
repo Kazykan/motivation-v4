@@ -1,11 +1,8 @@
-// src/app/parent/children/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
 import { parentApi } from "@/services/parentApi"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +11,7 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Users, Plus, Copy, Check } from "lucide-react"
+import { Plus, Copy, Check } from "lucide-react"
 import { ChildCard } from "@/components/ChildCard"
 
 export default function ParentChildrenPage() {
@@ -29,11 +26,6 @@ export default function ParentChildrenPage() {
       setChildren(data)
     } catch (error) {
       console.error("Ошибка загрузки детей:", error)
-      setChildren([
-        { id: 1, name: "Али", age: 12, balance: 1250, weekly_gain: 850 },
-        { id: 2, name: "Амина", age: 10, balance: 980, weekly_gain: 620 },
-        { id: 3, name: "Ислам", age: 7, balance: 540, weekly_gain: 300 },
-      ])
     } finally {
       setLoading(false)
     }
@@ -59,11 +51,10 @@ export default function ParentChildrenPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-slate-900">Дети</h1>
         <Dialog>
-          <DialogTrigger asChild>
-            <Button size="sm" className="h-8 bg-amber-400 text-slate-900 hover:bg-amber-500">
-              <Plus className="mr-1.5 h-4 w-4" />
-              Добавить ребенка
-            </Button>
+          {/* Убран asChild, чтобы не плодить вложенные теги <button> */}
+          <DialogTrigger className="inline-flex items-center justify-center h-8 px-3 rounded-lg text-sm font-medium bg-amber-400 text-slate-900 hover:bg-amber-500 cursor-pointer transition-colors">
+            <Plus className="mr-1.5 h-4 w-4" />
+            Добавить ребенка
           </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

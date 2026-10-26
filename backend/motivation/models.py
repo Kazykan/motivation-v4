@@ -41,10 +41,8 @@ class User(AbstractUser):
     )
 
     # Авторизация без пароля
-    telegram_id = (
-        models.BigIntegerField(
-            unique=True, null=True, blank=True, verbose_name="Telegram ID"
-        )
+    telegram_id = models.BigIntegerField(
+        unique=True, null=True, blank=True, verbose_name="Telegram ID"
     )
     google_id = models.CharField(
         max_length=255, unique=True, null=True, blank=True, verbose_name="Google Sub ID"
@@ -53,8 +51,20 @@ class User(AbstractUser):
         max_length=255, unique=True, null=True, blank=True, verbose_name="Apple User ID"
     )
 
-    avatar_url = models.URLField(
-        max_length=500, blank=True, null=True
+    avatar_url = models.URLField(max_length=500, blank=True, null=True)
+
+    birth_date = models.DateField(null=True, blank=True, verbose_name="Дата рождения")
+
+    class Gender(models.TextChoices):
+        MALE = "MALE", "Мужской"
+        FEMALE = "FEMALE", "Женский"
+
+    gender = models.CharField(
+        max_length=10,
+        choices=Gender.choices,
+        null=True,
+        blank=True,
+        verbose_name="Пол",
     )
 
     class Meta:
@@ -82,9 +92,7 @@ class FamilyGroup(models.Model):
     name = models.CharField(
         max_length=100, default="Моя семья", verbose_name="Название семьи"
     )
-    created_at = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Семья"

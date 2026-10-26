@@ -2,15 +2,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { User, ShieldCheck, PhoneCall } from "lucide-react"
-
-interface ProfileCardProps {
-  user: {
-    name?: string
-    role?: string
-    phone?: string
-    telegram?: string
-  }
-}
+import { ProfileCardProps } from "@/types/props"
 
 export function ProfileCard({ user }: ProfileCardProps) {
   return (

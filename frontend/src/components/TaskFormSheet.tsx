@@ -12,24 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-
-interface TaskFormSheetProps {
-  isOpen: boolean
-  onClose: () => void
-  taskToEdit?: {
-    id: number
-    title: string
-    description: string
-    price_per_run: number
-    child_id?: number
-    schedule_type?: string
-    days?: string[]
-    count?: number
-    is_active?: boolean
-  } | null
-  childrenList: Array<{ id: number; name: string }>
-  onSubmit: (data: any) => Promise<void>
-}
+import { TaskFormSheetProps } from "@/types/props"
 
 const DAYS_OF_WEEK = [
   { id: "mon", label: "Пн" },

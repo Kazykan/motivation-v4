@@ -1,18 +1,30 @@
 import { Card, CardContent } from "@/components/ui/card"
+import { ChildCardProps } from "@/types/props"
 import { Users } from "lucide-react"
 
-interface ChildCardProps {
-  child: {
-    id: number
-    name: string
-    age?: number
-    balance: number
-    weekly_gain?: number
-  }
-  action?: React.ReactNode
-}
-
 export function ChildCard({ child, action }: ChildCardProps) {
+  const calculateAge = () => {
+    if (child.age) return child.age
+    if (!child.birth_date) return null
+    const today = new Date()
+    const birth = new Date(child.birth_date)
+    let age = today.getFullYear() - birth.getFullYear()
+    const m = today.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+      age--
+    }
+    return age
+  }
+
+  const getGenderLabel = () => {
+    if (child.gender === "MALE") return "Сын"
+    if (child.gender === "FEMALE") return "Дочь"
+    return null
+  }
+
+  const age = calculateAge()
+  const genderLabel = getGenderLabel()
+
   return (
     <Card className="border-slate-200">
       <CardContent className="flex items-center justify-between p-4">
@@ -22,7 +34,9 @@ export function ChildCard({ child, action }: ChildCardProps) {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-slate-900">
-              {child.name} • {child.age || 10} лет
+              {child.first_name || child.name || child.username}
+              {genderLabel && ` • ${genderLabel}`}
+              {age !== null && ` • ${age} лет`}
             </span>
             <div className="flex items-center gap-3 text-xs text-slate-500 pt-0.5">
               <span>

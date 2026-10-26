@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -145,9 +146,11 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
-        "rest_framework.permissions.AllowAny"
-        if DISABLE_AUTH
-        else "rest_framework.permissions.IsAuthenticated",
+        (
+            "rest_framework.permissions.AllowAny"
+            if DISABLE_AUTH
+            else "rest_framework.permissions.IsAuthenticated"
+        ),
     ),
 }
 
@@ -160,3 +163,8 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-parent-telegram-id",
+    "x-child-telegram-id",
+]

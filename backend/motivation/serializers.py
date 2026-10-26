@@ -26,6 +26,8 @@ class UserSerializer(serializers.ModelSerializer):
             "google_id",
             "apple_id",
             "avatar_url",
+            "gender",
+            "birth_date",
         )
         read_only_fields = ("id",)
 

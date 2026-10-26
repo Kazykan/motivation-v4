@@ -38,21 +38,39 @@ class IsParentOrReadOnly(permissions.BasePermission):
 
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = User.objects.all()
     serializer_class = UserSerializer
 
-    @action(detail=False, methods=["get"])
-    def me(self, request):
-        if (
-            getattr(settings, "DISABLE_AUTH", False)
-            and not request.user.is_authenticated
-        ):
-            return Response(
-                {"detail": "Авторизация отключена, пользователь не определен."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
+    def get_queryset(self) -> QuerySet:
+        user = self.request.user
+        queryset = User.objects.all()
+
+        if getattr(settings, "DISABLE_AUTH", False) or not user.is_authenticated:
+            is_child_param = self.request.query_params.get("is_child")
+            if is_child_param is not None:
+                is_child = is_child_param.lower() in ["true", "1"]
+                # Фильтрация по реальному полю роли в БД
+                role_val = User.Role.CHILD if hasattr(User, "Role") else "CHILD"
+                if not is_child:
+                    role_val = "PARENT"
+                queryset = queryset.filter(role=role_val)
+            return queryset
+
+        # Проверка через атрибут роли вместо property
+        if getattr(user, "role", None) == "CHILD":
+            return queryset.filter(id=user.id)
+
+        if getattr(user, "role", None) == "PARENT":
+            family_ids = FamilyMembership.objects.filter(
+                user=user, role="PARENT"
+            ).values_list("family_id", flat=True)
+
+            child_ids = FamilyMembership.objects.filter(
+                family_id__in=family_ids, role="CHILD"
+            ).values_list("user_id", flat=True)
+
+            return queryset.filter(id__in=child_ids)
+
+        return queryset.none()
 
 
 class FamilyInviteCodeViewSet(viewsets.ModelViewSet):

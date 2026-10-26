@@ -7,6 +7,21 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  
+  /* Фирменная палитра семейного приложения */
+  --color-brand-primary: #fbbf24;      /* Теплый янтарный (акцентный) */
+  --color-brand-primary-hover: #f59e0b; /* Янтарный при наведении */
+  --color-brand-dark: #0f172a;          /* Глубокий темно-синий для текста/шапок */
+  --color-brand-muted: #64748b;         /* Второстепенный текст */
+  --color-brand-surface: #f7f6f2;       /* Фоновый для карточек и модалок */
+  --color-brand-success: #10b981;       /* Зеленый (деньги, подтверждено) */
+  --color-brand-error: #f43f5e;         /* Красный (штрафы, удаление) */
+
+
+
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
