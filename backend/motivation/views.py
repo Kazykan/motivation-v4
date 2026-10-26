@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -10,7 +12,7 @@ from .models import (
     TaskLog,
     WeeklyReport,
 )
-from django.db.models import QuerySet
+from django.db.models import Prefetch, QuerySet
 from django.conf import settings
 from .serializers import (
     UserSerializer,
@@ -128,6 +130,158 @@ class TaskViewSet(viewsets.ModelViewSet):
         if child_id:
             queryset = queryset.filter(child_id=child_id)
         return queryset
+
+    @action(detail=False, methods=["get"], url_path="weekly-review")
+    def weekly_review(self, request):
+        """
+        Возвращает агрегированную недельную статистику и логи по заданиям для указанного ребенка.
+
+        Query Params:
+            child_id (int, required): ID ребенка.
+            week_start (str, optional): Дата начала недели в формате YYYY-MM-DD (понедельник).
+                                        Если не указана, берется текущая неделя.
+
+        Response JSON format (200 OK):
+        [
+          {
+            "taskId": 1,
+            "title": "Уборка комнаты",
+            "description": "Сложить вещи, протереть пыль",
+            "weeklyPrice": "900.00",
+            "scheduleType": "FLEXIBLE",
+            "targetCount": 3,
+            "weekStart": "2025-10-20",
+            "weekEnd": "2025-10-26",
+            "child": {
+              "id": 2,
+              "name": "Али",
+              "age": 12,
+              "avatar": "https://..."
+            },
+            "summary": {
+              "approvedCount": 1,
+              "pendingCount": 2,
+              "rejectedCount": 0,
+              "calculatedAmount": "300.00"
+            },
+            "logs": [
+              { "id": 101, "date": "2025-10-20", "status": "APPROVED", "earned_amount": "300.00" },
+              { "id": 102, "date": "2025-10-21", "status": "DONE", "earned_amount": "300.00" },
+              { "id": 103, "date": "2025-10-23", "status": "DONE", "earned_amount": "300.00" }
+            ]
+          }
+        ]
+
+        Error JSON format (400 Bad Request):
+        {
+          "detail": "Параметр child_id обязателен."
+        }
+        """
+        child_id = request.query_params.get("child_id")
+        if not child_id:
+            return Response(
+                {"detail": "Параметр child_id обязателен."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        week_start_str = request.query_params.get("week_start")
+        if week_start_str:
+            try:
+                start_date = date.fromisoformat(week_start_str)
+            except ValueError:
+                return Response(
+                    {"detail": "Неверный формат week_start. Используйте YYYY-MM-DD."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            today = date.today()
+            start_date = today - timedelta(days=today.weekday())
+
+        end_date = start_date + timedelta(days=6)
+
+        tasks = (
+            Task.objects.filter(child_id=child_id, is_active=True)
+            .select_related("child")
+            .prefetch_related(
+                Prefetch(
+                    "logs",
+                    queryset=TaskLog.objects.filter(date__range=[start_date, end_date]),
+                    to_attr="filtered_logs",
+                )
+            )
+        )
+
+        result = []
+        for task in tasks:
+            logs_data = []
+            approved_count = 0
+            pending_count = 0
+            rejected_count = 0
+            calculated_amount = 0
+
+            for log in task.filtered_logs:
+                if log.status == TaskLog.Status.APPROVED:
+                    approved_count += 1
+                    calculated_amount += float(log.earned_amount)
+                elif log.status == TaskLog.Status.DONE_BY_CHILD:
+                    pending_count += 1
+                elif log.status == TaskLog.Status.REJECTED:
+                    rejected_count += 1
+
+                logs_data.append(
+                    {
+                        "id": log.id,
+                        "date": log.date.isoformat(),
+                        "status": log.status,
+                        "earned_amount": str(log.earned_amount),
+                    }
+                )
+
+            child_obj = task.child
+            child_name = (
+                child_obj.first_name or child_obj.username if child_obj else "Ребенок"
+            )
+
+            # Расчет возраста по birth_date, если поле есть
+            child_age = 12
+            if getattr(child_obj, "birth_date", None):
+                today = date.today()
+                child_age = (
+                    today.year
+                    - child_obj.birth_date.year
+                    - (
+                        (today.month, today.day)
+                        < (child_obj.birth_date.month, child_obj.birth_date.day)
+                    )
+                )
+
+            result.append(
+                {
+                    "taskId": task.id,
+                    "title": task.title,
+                    "description": task.description,
+                    "weeklyPrice": str(task.weekly_price),
+                    "scheduleType": task.schedule_type,
+                    "targetCount": task.target_count,
+                    "weekStart": start_date.isoformat(),
+                    "weekEnd": end_date.isoformat(),
+                    "child": {
+                        "id": child_obj.id if child_obj else None,
+                        "name": child_name,
+                        "age": child_age,
+                        "avatar": getattr(child_obj, "avatar_url", "") or "",
+                    },
+                    "summary": {
+                        "approvedCount": approved_count,
+                        "pendingCount": pending_count,
+                        "rejectedCount": rejected_count,
+                        "calculatedAmount": str(round(calculated_amount, 2)),
+                    },
+                    "logs": logs_data,
+                }
+            )
+
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class TaskLogViewSet(viewsets.ModelViewSet):

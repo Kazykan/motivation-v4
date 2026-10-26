@@ -56,4 +56,11 @@ export const parentApi = {
     )
     return res.data
   },
+
+  async getWeeklyReview(childId: number, weekStart?: string) {
+    const params: any = { child_id: childId }
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("tasks/weekly-review/", { params })
+    return res.data
+  },
 }

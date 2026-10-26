@@ -78,3 +78,38 @@ export interface TaskCardForParentProps {
   onEdit: (task: any) => void
   onDelete: (id: number) => void
 }
+
+xport interface WeeklyReviewTaskLog {
+  id: number
+  date: string
+  status: "APPROVED" | "DONE" | "REJECTED" | "PENDING"
+  earned_amount: string | number
+}
+
+export interface WeeklyReviewChild {
+  id: number
+  name: string
+  age: number
+  avatar?: string
+}
+
+export interface WeeklyReviewSummary {
+  approvedCount: number
+  pendingCount: number
+  rejectedCount: number
+  calculatedAmount: string | number
+}
+
+export interface WeeklyReviewItem {
+  taskId: number
+  title: string
+  description: string
+  weeklyPrice: string | number
+  scheduleType: string
+  targetCount: number
+  weekStart: string
+  weekEnd: string
+  child: WeeklyReviewChild
+  summary: WeeklyReviewSummary
+  logs: WeeklyReviewTaskLog[]
+}

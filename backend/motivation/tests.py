@@ -90,3 +90,73 @@ class WeeklyReportBusinessLogicTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
+
+
+class WeeklyReviewViewTests(APITestCase):
+    def setUp(self):
+        self.parent = User.objects.create_user(
+            username="parent_test", password="password123", role=User.Role.PARENT
+        )
+        self.child = User.objects.create_user(
+            username="child_test",
+            password="password123",
+            role=User.Role.CHILD,
+            first_name="Али",
+        )
+        self.task = Task.objects.create(
+            child=self.child,
+            created_by=self.parent,
+            title="Уборка комнаты",
+            weekly_price=Decimal("900.00"),
+            schedule_type=Task.ScheduleType.FLEXIBLE,
+            target_count=3,
+            is_active=True,
+        )
+        self.url = reverse("task-weekly-review")
+
+    def test_weekly_review_success(self):
+        self.client.force_authenticate(user=self.parent)
+        log_date = date(2025, 10, 20)
+        TaskLog.objects.create(
+            task=self.task,
+            date=log_date,
+            status=TaskLog.Status.APPROVED,
+            earned_amount=Decimal("300.00"),
+        )
+
+        response = self.client.get(
+            self.url, {"child_id": self.child.id, "week_start": "2025-10-20"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["taskId"], self.task.id)
+        self.assertEqual(data[0]["summary"]["approvedCount"], 1)
+        self.assertEqual(len(data[0]["logs"]), 1)
+
+    def test_weekly_review_missing_child_id(self):
+        self.client.force_authenticate(user=self.parent)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("child_id", response.json()["detail"])
+
+    def test_weekly_review_invalid_date_format(self):
+        self.client.force_authenticate(user=self.parent)
+        response = self.client.get(
+            self.url, {"child_id": self.child.id, "week_start": "invalid-date"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("week_start", response.json()["detail"])
+
+    def test_weekly_review_empty_result(self):
+        self.client.force_authenticate(user=self.parent)
+        other_child = User.objects.create_user(
+            username="empty_child", role=User.Role.CHILD
+        )
+        response = self.client.get(self.url, {"child_id": other_child.id})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), [])
