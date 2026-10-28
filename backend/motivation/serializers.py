@@ -7,6 +7,7 @@ from .models import (
     FamilyInviteCode,
     Task,
     TaskLog,
+    TaskLogHistory,
     WeeklyReport,
 )
 
@@ -111,7 +112,12 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
-        if request and request.user and request.user.is_parent:
+        if (
+            request
+            and request.user
+            and request.user.is_authenticated
+            and getattr(request.user, "is_parent", False)
+        ):
             child = attrs.get("child")
             if not child or not child.is_child:
                 raise serializers.ValidationError(
@@ -122,7 +128,11 @@ class TaskSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        validated_data["created_by"] = self.context["request"].user
+        request = self.context.get("request")
+        if request and request.user and request.user.is_authenticated:
+            validated_data["created_by"] = request.user
+        else:
+            validated_data["created_by"] = None
         return super().create(validated_data)
 
 
@@ -153,3 +163,16 @@ class WeeklyReportSerializer(serializers.ModelSerializer):
             "final_sum",
         )
         read_only_fields = ("id", "calculated_amount", "final_sum")
+
+
+class TaskLogHistorySerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskLogHistory
+        fields = ("id", "old_status", "new_status", "changed_by_name", "changed_at")
+
+    def get_changed_by_name(self, obj):
+        if not obj.changed_by:
+            return "Система"
+        return obj.changed_by.first_name or obj.changed_by.username

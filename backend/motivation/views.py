@@ -1,9 +1,12 @@
+# backend/motivation/views.py
 from datetime import date, timedelta
 
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
+
+from motivation.services.task_logs import change_task_log_status
 from .models import (
     FamilyGroup,
     FamilyMembership,
@@ -21,6 +24,7 @@ from .serializers import (
     TaskSerializer,
     TaskLogSerializer,
     WeeklyReportSerializer,
+    TaskLogHistorySerializer,
 )
 
 User = get_user_model()
@@ -50,14 +54,12 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             is_child_param = self.request.query_params.get("is_child")
             if is_child_param is not None:
                 is_child = is_child_param.lower() in ["true", "1"]
-                # Фильтрация по реальному полю роли в БД
                 role_val = User.Role.CHILD if hasattr(User, "Role") else "CHILD"
                 if not is_child:
                     role_val = "PARENT"
                 queryset = queryset.filter(role=role_val)
             return queryset
 
-        # Проверка через атрибут роли вместо property
         if getattr(user, "role", None) == "CHILD":
             return queryset.filter(id=user.id)
 
@@ -133,50 +135,6 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="weekly-review")
     def weekly_review(self, request):
-        """
-        Возвращает агрегированную недельную статистику и логи по заданиям для указанного ребенка.
-
-        Query Params:
-            child_id (int, required): ID ребенка.
-            week_start (str, optional): Дата начала недели в формате YYYY-MM-DD (понедельник).
-                                        Если не указана, берется текущая неделя.
-
-        Response JSON format (200 OK):
-        [
-          {
-            "taskId": 1,
-            "title": "Уборка комнаты",
-            "description": "Сложить вещи, протереть пыль",
-            "weeklyPrice": "900.00",
-            "scheduleType": "FLEXIBLE",
-            "targetCount": 3,
-            "weekStart": "2025-10-20",
-            "weekEnd": "2025-10-26",
-            "child": {
-              "id": 2,
-              "name": "Али",
-              "age": 12,
-              "avatar": "https://..."
-            },
-            "summary": {
-              "approvedCount": 1,
-              "pendingCount": 2,
-              "rejectedCount": 0,
-              "calculatedAmount": "300.00"
-            },
-            "logs": [
-              { "id": 101, "date": "2025-10-20", "status": "APPROVED", "earned_amount": "300.00" },
-              { "id": 102, "date": "2025-10-21", "status": "DONE", "earned_amount": "300.00" },
-              { "id": 103, "date": "2025-10-23", "status": "DONE", "earned_amount": "300.00" }
-            ]
-          }
-        ]
-
-        Error JSON format (400 Bad Request):
-        {
-          "detail": "Параметр child_id обязателен."
-        }
-        """
         child_id = request.query_params.get("child_id")
         if not child_id:
             return Response(
@@ -242,7 +200,6 @@ class TaskViewSet(viewsets.ModelViewSet):
                 child_obj.first_name or child_obj.username if child_obj else "Ребенок"
             )
 
-            # Расчет возраста по birth_date, если поле есть
             child_age = 12
             if getattr(child_obj, "birth_date", None):
                 today = date.today()
@@ -263,6 +220,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                     "weeklyPrice": str(task.weekly_price),
                     "scheduleType": task.schedule_type,
                     "targetCount": task.target_count,
+                    "targetDays": task.target_days,
                     "weekStart": start_date.isoformat(),
                     "weekEnd": end_date.isoformat(),
                     "child": {
@@ -297,28 +255,24 @@ class TaskLogViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = TaskLog.objects.all()
 
         if getattr(settings, "DISABLE_AUTH", False) or not user.is_authenticated:
-            child_id = self.request.query_params.get("child_id")
-            if child_id:
-                queryset = queryset.filter(task__child_id=child_id)
-            date_val = self.request.query_params.get("date")
-            if date_val:
-                queryset = queryset.filter(date=date_val)
-            return queryset
+            return TaskLog.objects.all()
+
+        if getattr(user, "is_parent", False):
+            return TaskLog.objects.all()
 
         if getattr(user, "is_child", False):
-            queryset = queryset.filter(task__child=user)
+            return TaskLog.objects.filter(task__child=user)
 
-        child_id = self.request.query_params.get("child_id")
-        if child_id and getattr(user, "is_parent", False):
-            queryset = queryset.filter(task__child_id=child_id)
+        return TaskLog.objects.none()
 
-        date_val = self.request.query_params.get("date")
-        if date_val:
-            queryset = queryset.filter(date=date_val)
-        return queryset
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        task_log = self.get_object()
+        history_records = task_log.history.all()
+        serializer = TaskLogHistorySerializer(history_records, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         task = serializer.validated_data["task"]
@@ -333,16 +287,27 @@ class TaskLogViewSet(viewsets.ModelViewSet):
             if serializer.validated_data.get("status") in ["DONE", "APPROVED"]
             else 0
         )
-        updated_by_parent = (
-            True
-            if (user.is_authenticated and getattr(user, "is_parent", False))
-            else False
-        )
-        serializer.save(earned_amount=earned, updated_by_parent=updated_by_parent)
+        log = serializer.save(earned_amount=earned)
+
+        initial_status = serializer.validated_data.get("status")
+        if initial_status and initial_status != TaskLog.Status.PENDING:
+            change_task_log_status(log.id, initial_status, user)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        instance = serializer.instance
+        new_status = serializer.validated_data.get("status")
+
+        if new_status and new_status != instance.status:
+            change_task_log_status(instance.id, new_status, user)
+
+        serializer.save()
 
     @action(detail=False, methods=["post"], url_path="bulk-approve")
     def bulk_approve(self, request):
-        if not getattr(settings, "DISABLE_AUTH", False):
+        disable_auth = getattr(settings, "DISABLE_AUTH", False)
+
+        if not disable_auth:
             if not request.user.is_authenticated or not getattr(
                 request.user, "is_parent", False
             ):
@@ -364,11 +329,7 @@ class TaskLogViewSet(viewsets.ModelViewSet):
 
         updated_count = 0
         for log in logs:
-            log.status = TaskLog.Status.APPROVED
-            if log.task:
-                log.earned_amount = log.task.price_per_run
-            log.updated_by_parent = True
-            log.save()
+            change_task_log_status(log.id, TaskLog.Status.APPROVED, request.user)
             updated_count += 1
 
         return Response(

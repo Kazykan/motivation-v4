@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server"
-import { api } from "@/lib/axios"
-
-const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
+import { serverApi } from "@/lib/axios"
 
 export async function GET(request: Request) {
   try {
@@ -10,16 +8,12 @@ export async function GET(request: Request) {
 
     const headers: Record<string, string> = {}
 
-    if (isTestMode) {
-      headers["X-Parent-Telegram-Id"] = process.env.NEXT_PUBLIC_PARENT_TELEGRAM_ID || ""
-    }
-
     const params: Record<string, any> = {}
     if (childId) {
       params.child_id = childId
     }
 
-    const res = await api.get("/api/tasks/", {
+    const res = await serverApi.get("/api/tasks/", {
       params,
       headers,
     })
@@ -38,11 +32,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const headers: Record<string, string> = {}
 
-    if (isTestMode) {
-      headers["X-Parent-Telegram-Id"] = process.env.NEXT_PUBLIC_PARENT_TELEGRAM_ID || ""
-    }
-
-    const res = await api.post("/api/tasks/", body, { headers })
+    const res = await serverApi.post("/api/tasks/", body, { headers })
 
     return NextResponse.json(res.data)
   } catch (error: any) {

@@ -1,142 +1,172 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { parentApi } from "@/services/parentApi"
+import { useChildren } from "@/hooks/useChildren"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, FileText } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, Wallet } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export default function ParentReportsPage() {
-  const [reports, setReports] = useState<any[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const { children, isLoading: childrenLoading } = useChildren()
 
-  const fetchReports = async () => {
-    try {
-      const data = await parentApi.getWeeklyReports()
-      setReports(data)
-    } catch (error) {
-      console.error("Ошибка загрузки отчетов:", error)
-      setReports([
-        {
-          id: 1,
-          child_name: "Али",
-          age: 12,
-          earned: 1250,
-          bonus: 200,
-          penalty: 0,
-          total: 1450,
-          tasks_summary: [
-            { title: "Уборка комнаты", count: "3/5", sum: "900 ₽" },
-            { title: "Помощь на кухне", count: "2/3", sum: "400 ₽" },
-            { title: "Доп. задание", count: "1/1", sum: "200 ₽" },
-          ],
-        },
-      ])
-    } finally {
-      setLoading(false)
-    }
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null)
+
+  // Загружаем отчеты через TanStack Query
+  const { data: reports = [], isLoading: reportsLoading } = useQuery({
+    queryKey: ["weekly-reports", selectedChildId],
+    queryFn: () => parentApi.getWeeklyReports(selectedChildId || undefined),
+    enabled: !childrenLoading,
+  })
+
+  // Мутация для закрытия недели и отметки выплаты
+  const closeReportMutation = useMutation({
+    mutationFn: ({ reportId, data }: { reportId: number; data: any }) =>
+      parentApi.closeWeeklyReport(reportId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["weekly-reports"] })
+    },
+  })
+
+  const loading = childrenLoading || reportsLoading
+
+  const handleCloseWeek = (reportId: number) => {
+    closeReportMutation.mutate({
+      reportId,
+      data: {
+        is_payout_confirmed: true,
+        status: "CLOSED",
+      },
+    })
   }
 
-  useEffect(() => {
-    fetchReports()
-  }, [])
-
-  const currentReport = reports[0] || {
-    child_name: "Али",
-    earned: 1250,
-    bonus: 200,
-    penalty: 0,
-    total: 1450,
-    tasks_summary: [],
+  const goToReview = (childId: number, weekStart?: string) => {
+    const params = new URLSearchParams()
+    params.set("child_id", String(childId))
+    if (weekStart) params.set("week_start", weekStart)
+    router.push(`/parent/review?${params.toString()}`)
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pb-20">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-slate-900">Недельный отчет</h1>
+        <h1 className="text-xl font-bold tracking-tight text-slate-900">Недельные отчеты</h1>
       </div>
 
-      <div className="flex items-center justify-between rounded-xl bg-white border border-slate-200 p-3 shadow-xs">
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-xs font-semibold text-slate-800">13 – 19 окт. 2025</span>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+      {/* Фильтр по детям */}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => setSelectedChildId(null)}
+          className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+            selectedChildId === null
+              ? "bg-slate-900 text-white shadow-xs"
+              : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Все дети
+        </button>
+        {children.map((child: any) => (
+          <button
+            key={child.id}
+            type="button"
+            onClick={() => setSelectedChildId(child.id)}
+            className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+              selectedChildId === child.id
+                ? "bg-slate-900 text-white shadow-xs"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {child.first_name || child.name}
+          </button>
+        ))}
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-sm text-slate-500">Загрузка отчета...</div>
+        <div className="py-12 text-center text-sm text-slate-500">Загрузка отчетов...</div>
+      ) : reports.length === 0 ? (
+        <div className="py-12 text-center text-sm text-slate-500">Нет доступных отчетов</div>
       ) : (
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="pb-3 border-b border-slate-100">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-800 font-bold">
-                  {currentReport.child_name?.[0]}
-                </div>
-                <div className="flex flex-col">
-                  <CardTitle className="text-sm font-semibold text-slate-900">
-                    {currentReport.child_name}
-                  </CardTitle>
-                  <span className="text-xs text-slate-500">Сын • 12 лет</span>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2 pt-3 text-xs">
-              <div className="flex flex-col">
-                <span className="text-slate-400">Заработано</span>
-                <span className="font-bold text-slate-900">{currentReport.earned} ₽</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-slate-400">Бонусы</span>
-                <span className="font-bold text-emerald-600">+{currentReport.bonus} ₽</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-slate-400">Штрафы</span>
-                <span className="font-bold text-rose-600">-{currentReport.penalty} ₽</span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 pt-4">
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-semibold text-slate-700">Задания</span>
-              <div className="flex flex-col gap-1.5">
-                {(currentReport.tasks_summary || []).map((t: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0"
-                  >
-                    <span className="text-slate-600">{t.title}</span>
-                    <div className="flex items-center gap-4">
-                      <span className="text-slate-400">{t.count}</span>
-                      <span className="font-medium text-slate-900">{t.sum}</span>
+        <div className="flex flex-col gap-4">
+          {reports.map((report: any) => {
+            const childInfo = children.find((c: any) => c.id === report.child)
+            const isClosed = report.is_payout_confirmed || report.status === "CLOSED"
+
+            return (
+              <Card key={report.id} className="border-slate-200 shadow-sm">
+                <CardHeader className="pb-3 border-b border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-800 font-bold">
+                        {(childInfo?.first_name || childInfo?.name || "Р")?.[0]}
+                      </div>
+                      <div className="flex flex-col">
+                        <CardTitle className="text-sm font-semibold text-slate-900">
+                          {childInfo?.first_name || childInfo?.name || "Ребенок"}
+                        </CardTitle>
+                        <span className="text-xs text-slate-500">
+                          Период: {report.start_date} – {report.end_date}
+                        </span>
+                      </div>
+                    </div>
+                    <Badge
+                      className={
+                        isClosed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                      }
+                    >
+                      {isClosed ? "Выплачено" : "Ждет проверки"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4 pt-4">
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="flex flex-col">
+                      <span className="text-slate-400">Заработано</span>
+                      <span className="font-bold text-slate-900">{report.calculated_amount} ₽</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-slate-400">Корректировка</span>
+                      <span className="font-bold text-emerald-600">
+                        +{report.manual_adjustment} ₽
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-slate-400">Итого к выплате</span>
+                      <span className="font-extrabold text-slate-900">{report.final_sum} ₽</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
-              <span className="text-xs font-semibold text-slate-700">Корректировка</span>
-              <div className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
-                + 200 ₽ (За старание)
-              </div>
-            </div>
+                  {/* Кнопка быстрого перехода на вкладку проверка, если неделя не закрыта */}
+                  {!isClosed && (
+                    <div className="flex flex-col gap-2 pt-2">
+                      <Button
+                        variant="outline"
+                        className="w-full text-amber-700 border-amber-300 bg-amber-50/50 hover:bg-amber-100"
+                        onClick={() => goToReview(report.child, report.start_date)}
+                      >
+                        <AlertCircle className="mr-2 h-4 w-4" />
+                        Есть задания на проверку — перейти в «Проверка»
+                      </Button>
 
-            <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-              <span className="text-sm font-bold text-slate-900">Итоговая сумма</span>
-              <span className="text-lg font-extrabold text-slate-900">
-                {currentReport.total || 1450} ₽
-              </span>
-            </div>
-
-            <Button className="w-full bg-amber-400 text-slate-900 hover:bg-amber-500 mt-2">
-              Сохранить отчет
-            </Button>
-          </CardContent>
-        </Card>
+                      <Button
+                        className="w-full bg-amber-400 text-slate-900 hover:bg-amber-500 font-semibold"
+                        onClick={() => handleCloseWeek(report.id)}
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Закрыть неделю и отметить выплату
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
       )}
     </div>
   )

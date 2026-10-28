@@ -1,14 +1,26 @@
 import axios from "axios"
 
-const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
-
+// Клиент → всегда относительные пути (свой origin, Route Handlers).
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
-  headers: {
-    "Content-Type": "application/json",
-    ...(isTestMode && {
-      "X-Parent-Telegram-Id": process.env.NEXT_PUBLIC_PARENT_TELEGRAM_ID || "",
-      "X-Child-Telegram-Id": process.env.NEXT_PUBLIC_CHILD_TELEGRAM_ID || "",
-    }),
-  },
+  baseURL: "",
+  timeout: 15_000,
+  headers: { "Content-Type": "application/json" },
+})
+
+api.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const tgInitData = (window as any).Telegram?.WebApp?.initData
+    if (tgInitData) {
+      config.headers.Authorization = `tma ${tgInitData}`
+    }
+  }
+  return config
+})
+
+// Сервер → внутренний адрес Django (Route Handlers).
+// API_INTERNAL_URL задаётся в .env (например, http://127.0.0.1:8000).
+export const serverApi = axios.create({
+  baseURL: process.env.API_INTERNAL_URL || "http://127.0.0.1:8000",
+  timeout: 15_000,
+  headers: { "Content-Type": "application/json" },
 })

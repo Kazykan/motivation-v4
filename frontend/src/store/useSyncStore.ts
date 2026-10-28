@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { api } from "@/lib/axios"
+import { parentApi } from "@/services/parentApi"
 
 interface SyncState {
   // 1 & 2. Структура хранилища и буфер изменений
@@ -41,17 +42,27 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const { buffer } = get()
     if (Object.keys(buffer).length === 0) return
 
-    // 5. Перевод флага синхронизации в true (активация индикатора)
     set({ isSyncing: true })
 
     try {
-      // 5. Фоновая отправка накопленного буфера через Axios
-      await api.post("/api/sync-endpoint/", buffer)
+      const changes = Object.values(buffer)
 
-      // 5. При успешном ответе очистка буфера
+      // Выполняем запросы строго последовательно, чтобы не блокировать SQLite
+      for (const item of changes) {
+        if (!item.logId) {
+          await parentApi.createTaskLog({
+            task: item.taskId,
+            date: item.date,
+            status: item.status,
+          })
+        } else {
+          await parentApi.updateTaskLogStatus(item.logId, item.status)
+        }
+      }
+
       set({ buffer: {}, isSyncing: false, timerId: null })
     } catch (error) {
-      console.error("Ошибка синхронизации:", error)
+      console.error("Ошибка синхронизации логов:", error)
       set({ isSyncing: false })
     }
   },

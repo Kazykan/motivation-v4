@@ -1,3 +1,4 @@
+// frontend/src/components/Navigation.tsx
 "use client"
 
 import { useState } from "react"
@@ -13,11 +14,12 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { useLogSyncStore } from "@/store/useLogSyncStore"
 
 export function Navigation() {
   const pathname = usePathname()
-  // Переключатель роли для локальной отладки без бэкенда/авторизации
   const [role, setRole] = useState<"PARENT" | "CHILD">("PARENT")
+  const isSyncing = useLogSyncStore((state) => state.isSyncing)
 
   const parentNav = [
     { label: "Дети", href: "/parent/children", icon: Users },
@@ -35,8 +37,7 @@ export function Navigation() {
   const currentNav = role === "PARENT" ? parentNav : childNav
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/90 backdrop-blur-md">
-      {/* Панель локальной отладки роли */}
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md">
       <div className="flex justify-center border-b border-slate-100 py-1 bg-amber-100/50 text-[10px]">
         <span className="mr-2 self-center font-medium text-slate-600">Режим тестирования:</span>
         <Button
@@ -57,8 +58,15 @@ export function Navigation() {
         </Button>
       </div>
 
-      {/* Элементы нижней навигации */}
-      <nav className="mx-auto flex max-w-md items-center justify-around py-2">
+      <nav className="mx-auto flex max-w-md items-center justify-around py-2 relative">
+        {/* Индикатор синхронизации на панели навигации */}
+        {isSyncing && (
+          <div className="absolute top-1.5 right-4 flex items-center gap-1.5 text-[10px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+            <span className="h-2 w-2 animate-ping rounded-full bg-amber-500" />
+            Сохранение...
+          </div>
+        )}
+
         {currentNav.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href

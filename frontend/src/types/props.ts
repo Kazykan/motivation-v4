@@ -79,7 +79,7 @@ export interface TaskCardForParentProps {
   onDelete: (id: number) => void
 }
 
-xport interface WeeklyReviewTaskLog {
+export interface WeeklyReviewTaskLog {
   id: number
   date: string
   status: "APPROVED" | "DONE" | "REJECTED" | "PENDING"
@@ -105,11 +105,24 @@ export interface WeeklyReviewItem {
   title: string
   description: string
   weeklyPrice: string | number
-  scheduleType: string
+  scheduleType: "FIXED" | "FLEXIBLE"
   targetCount: number
+  targetDays?: number[] | string[]
   weekStart: string
   weekEnd: string
   child: WeeklyReviewChild
   summary: WeeklyReviewSummary
   logs: WeeklyReviewTaskLog[]
+}
+
+export interface LogHistoryViewerProps {
+  logId: number
+}
+
+export interface TaskLogHistoryItem {
+  id: number
+  old_status: string
+  new_status: string
+  changed_by_name: string
+  changed_at: string
 }

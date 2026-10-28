@@ -1,31 +1,30 @@
 import { api } from "@/lib/axios"
 
 export const childApi = {
-  // Список активных задач текущего ребенка
   async getMyTasks() {
-    const res = await api.get("/api/tasks/")
+    // BFF: /api/tasks без child_id вернёт задачи текущего ребёнка (если
+    // бэкенд умеет фильтровать по X-Child-Telegram-Id — надо добавить
+    // поддержку в route.ts, сейчас route.ts это не делает).
+    const res = await api.get("/api/tasks")
     return res.data
   },
 
-  // История выполнения заданий (логи)
   async getMyTaskLogs() {
-    const res = await api.get("/api/task-logs/")
+    const res = await api.get("/api/task-logs")
     return res.data
   },
 
-  // Отправить задание на проверку (создать TaskLog со статусом DONE_BY_CHILD)
   async submitTaskExecution(taskId: number, date: string) {
-    const res = await api.post("/api/task-logs/", {
+    const res = await api.post("/api/task-logs", {
       task: taskId,
-      date: date,
+      date,
       status: "DONE",
     })
     return res.data
   },
 
-  // Недельные отчеты ребенка
   async getMyReports() {
-    const res = await api.get("/api/weekly-reports/")
+    const res = await api.get("/api/parent/reports") // ❌ нужен child-роут
     return res.data
   },
 }

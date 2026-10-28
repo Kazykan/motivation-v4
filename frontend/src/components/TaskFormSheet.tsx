@@ -1,3 +1,4 @@
+// frontend/src/components/TaskFormSheet.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -15,13 +16,13 @@ import { cn } from "@/lib/utils"
 import { TaskFormSheetProps } from "@/types/props"
 
 const DAYS_OF_WEEK = [
-  { id: "mon", label: "Пн" },
-  { id: "tue", label: "Вт" },
-  { id: "wed", label: "Ср" },
-  { id: "thu", label: "Чт" },
-  { id: "fri", label: "Пт" },
-  { id: "sat", label: "Сб" },
-  { id: "sun", label: "Вс" },
+  { id: 1, label: "Пн" },
+  { id: 2, label: "Вт" },
+  { id: 3, label: "Ср" },
+  { id: 4, label: "Чт" },
+  { id: 5, label: "Пт" },
+  { id: 6, label: "Сб" },
+  { id: 7, label: "Вс" },
 ]
 
 export function TaskFormSheet({
@@ -36,20 +37,34 @@ export function TaskFormSheet({
   const [price, setPrice] = useState("")
   const [childId, setChildId] = useState<string>("")
   const [scheduleType, setScheduleType] = useState<"FIXED" | "FLEXIBLE">("FIXED")
-  const [selectedDays, setSelectedDays] = useState<string[]>(["mon", "tue", "wed", "thu", "fri"])
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5])
   const [count, setCount] = useState<number>(5)
   const [isActive, setIsActive] = useState<boolean>(true)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (taskToEdit) {
-      setTitle(taskToEdit.title)
-      setDescription(taskToEdit.description)
-      setPrice(String(taskToEdit.price_per_run))
-      setChildId(taskToEdit.child_id ? String(taskToEdit.child_id) : "")
-      setScheduleType(taskToEdit.schedule_type === "Гибкое" ? "FLEXIBLE" : "FIXED")
-      setSelectedDays(taskToEdit.days || ["mon", "tue", "wed", "thu", "fri"])
-      setCount(taskToEdit.count || 5)
+      setTitle(taskToEdit.title || "")
+      setDescription(taskToEdit.description || "")
+      setPrice(String(taskToEdit.weekly_price || taskToEdit.price_per_run || ""))
+      setChildId(
+        taskToEdit.child_id
+          ? String(taskToEdit.child_id)
+          : (taskToEdit as any).child
+            ? String((taskToEdit as any).child)
+            : "",
+      )
+      setScheduleType(taskToEdit.schedule_type === "FLEXIBLE" ? "FLEXIBLE" : "FIXED")
+
+      const days = taskToEdit.target_days || (taskToEdit as any).days || [1, 2, 3, 4, 5]
+      setSelectedDays(
+        days
+          .map((d: any) => (typeof d === "string" ? parseDayString(d) : Number(d)))
+          .filter(Boolean),
+      )
+
+      setCount(taskToEdit.target_count || (taskToEdit as any).count || 5)
       setIsActive(taskToEdit.is_active ?? true)
     } else {
       setTitle("")
@@ -57,13 +72,19 @@ export function TaskFormSheet({
       setPrice("")
       setChildId(childrenList[0]?.id ? String(childrenList[0].id) : "")
       setScheduleType("FIXED")
-      setSelectedDays(["mon", "tue", "wed", "thu", "fri"])
+      setSelectedDays([1, 2, 3, 4, 5])
       setCount(5)
       setIsActive(true)
     }
+    setError(null)
   }, [taskToEdit, isOpen, childrenList])
 
-  const toggleDay = (dayId: string) => {
+  const parseDayString = (dayStr: string): number => {
+    const map: Record<string, number> = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 7 }
+    return map[dayStr.toLowerCase()] || 1
+  }
+
+  const toggleDay = (dayId: number) => {
     setSelectedDays((prev) =>
       prev.includes(dayId) ? prev.filter((d) => d !== dayId) : [...prev, dayId],
     )
@@ -71,22 +92,41 @@ export function TaskFormSheet({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!childId) {
+      setError("Выберите ребенка")
+      return
+    }
+
     setLoading(true)
+    setError(null)
+
     try {
-      await onSubmit({
-        id: taskToEdit?.id,
+      const payload: any = {
         title,
         description,
-        price_per_run: Number(price),
+        weekly_price: Number(price),
         child: Number(childId),
-        schedule_type: scheduleType === "FIXED" ? "Фиксированное" : "Гибкое",
-        days: scheduleType === "FIXED" ? selectedDays : [],
-        count: scheduleType === "FLEXIBLE" ? count : selectedDays.length,
+        schedule_type: scheduleType,
         is_active: isActive,
-      })
+      }
+
+      if (scheduleType === "FIXED") {
+        payload.target_days = selectedDays
+        payload.target_count = null
+      } else {
+        payload.target_count = count
+        payload.target_days = []
+      }
+
+      if (taskToEdit?.id) {
+        payload.id = taskToEdit.id
+      }
+
+      await onSubmit(payload)
       onClose()
-    } catch (error) {
-      console.error("Ошибка сохранения задачи:", error)
+    } catch (err: any) {
+      console.error("Ошибка сохранения задачи:", err)
+      setError(err.response?.data?.detail || "Не удалось сохранить задание.")
     } finally {
       setLoading(false)
     }
@@ -102,6 +142,25 @@ export function TaskFormSheet({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-slate-600">Ребенок</label>
+            <select
+              value={childId}
+              onChange={(e) => setChildId(e.target.value)}
+              required
+              className="bg-white border-none shadow-none h-11 rounded-xl text-sm px-3 text-slate-900 outline-none"
+            >
+              <option value="" disabled>
+                Выберите ребенка
+              </option>
+              {childrenList.map((child) => (
+                <option key={child.id} value={child.id}>
+                  {child.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-slate-600">Название задачи</label>
             <Input
@@ -119,16 +178,16 @@ export function TaskFormSheet({
               placeholder="Подробное описание..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              required
               className="bg-white border-none shadow-none h-11 rounded-xl text-sm"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-600">Сумма за выполнение (₽)</label>
+            <label className="text-xs font-medium text-slate-600">Стоимость за неделю (₽)</label>
             <Input
               type="number"
-              placeholder="300"
+              step="0.01"
+              placeholder="900"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               required
@@ -219,6 +278,8 @@ export function TaskFormSheet({
             <label className="text-xs font-medium text-slate-600">Активно</label>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
 
           <DialogFooter className="pt-2">
             <Button
