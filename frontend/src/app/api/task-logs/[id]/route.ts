@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { api } from "@/lib/axios"
+import { serverApi } from "@/lib/axios"
 
 const isTestMode = process.env.NEXT_PUBLIC_TEST_MODE === "true"
 
@@ -15,7 +15,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const authHeader = request.headers.get("Authorization")
     if (authHeader) headers["Authorization"] = authHeader
 
-    const res = await api.patch(`/api/v1/task-logs/${id}/`, body, { headers })
+    const res = await serverApi.patch(`/api/v1/task-logs/${id}/`, body, { headers })
     return NextResponse.json(res.data)
   } catch (error: any) {
     return NextResponse.json(

@@ -1,6 +1,10 @@
+# backend/motivation/services/task_logs.py
 from decimal import Decimal
+
+from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.utils import timezone
+
 from motivation.models import TaskLog, TaskLogHistory
 
 
@@ -8,11 +12,16 @@ def recalculate_task_logs_earnings(task, week_start, week_end):
     """
     Пересчитывает earned_amount для логов конкретного задания за неделю
     в строгом хронологическом порядке с распределением остатка копеек.
+
+    Вызывается из change_task_log_status после изменения статуса лога.
+    Не вызывается из TaskLog.save() — это исключает рекурсию.
     """
-    logs = task.logs.filter(
-        date__range=[week_start, week_end],
-        status__in=[TaskLog.Status.APPROVED, TaskLog.Status.DONE_BY_CHILD],
-    ).order_by("date", "id")
+    logs = list(
+        task.logs.filter(
+            date__range=[week_start, week_end],
+            status__in=[TaskLog.Status.APPROVED, TaskLog.Status.DONE_BY_CHILD],
+        ).order_by("date", "id")
+    )
 
     if task.schedule_type == task.ScheduleType.FLEXIBLE:
         runs = task.target_count or 1
@@ -25,6 +34,7 @@ def recalculate_task_logs_earnings(task, week_start, week_end):
     total_cents = int(task.weekly_price * 100)
     base_cents, remainder = divmod(total_cents, runs)
 
+    to_update = []
     for index, log in enumerate(logs):
         if index < runs:
             cents = base_cents + (1 if index < remainder else 0)
@@ -34,13 +44,19 @@ def recalculate_task_logs_earnings(task, week_start, week_end):
 
         if log.earned_amount != new_earned:
             log.earned_amount = new_earned
-            log.save(update_fields=["earned_amount"])
+            to_update.append(log)
+
+    if to_update:
+        TaskLog.objects.bulk_update(to_update, ["earned_amount"])
 
 
 @transaction.atomic
 def change_task_log_status(log_id, new_status, user):
     """
     Безопасно изменяет статус выполнения задания.
+
+    Пересчёт earned_amount за неделю выполняется здесь,
+    ровно один раз на изменение статуса.
     """
     log = TaskLog.objects.select_for_update().get(id=log_id)
 
@@ -52,9 +68,6 @@ def change_task_log_status(log_id, new_status, user):
 
     old_status = log.status
 
-    # Проверяем авторизацию: если пользователь анонимный, в тестовом режиме подставляем None или первого пользователя для истории
-    from django.contrib.auth.models import AnonymousUser
-
     is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
 
     changed_by_user = None if is_anon else user
@@ -64,13 +77,12 @@ def change_task_log_status(log_id, new_status, user):
         log=log,
         old_status=old_status,
         new_status=new_status,
-        changed_by=changed_by_user,  # Теперь не упадет, если прилетит AnonymousUser
+        changed_by=changed_by_user,
     )
 
     log.status = new_status
     log.updated_by = changed_by_user
     log.updated_by_parent = is_parent_user
-
     log.save(
         update_fields=[
             "status",
@@ -80,8 +92,8 @@ def change_task_log_status(log_id, new_status, user):
         ]
     )
 
-    # Запускаем пересчет копеек для недели этого лога
-    if log.task and log.task.schedule_type == log.task.ScheduleType.FLEXIBLE:
+    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
+    if log.task_id:
         start_date = log.date - timezone.timedelta(days=log.date.weekday())
         end_date = start_date + timezone.timedelta(days=6)
         recalculate_task_logs_earnings(log.task, start_date, end_date)

@@ -21,7 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-DISABLE_AUTH = os.getenv("DISABLE_AUTH", "False").lower() in ("true", "1", "t")
+BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
+BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
@@ -143,15 +144,10 @@ AUTH_USER_MODEL = "motivation.User"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "motivation.authentication.TelegramInitDataAuthentication",
+        "motivation.authentication.BFFServiceAuthentication",  # ← добавили
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-    "DEFAULT_PERMISSION_CLASSES": (
-        (
-            "rest_framework.permissions.AllowAny"
-            if DISABLE_AUTH
-            else "rest_framework.permissions.IsAuthenticated"
-        ),
-    ),
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
 }
 
 SIMPLE_JWT = {

@@ -1,22 +1,21 @@
 # backend/motivation/views.py
 from datetime import date, timedelta
 
+from django.conf import settings
+from django.db.models import QuerySet, Prefetch
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.contrib.auth import get_user_model
 
-from motivation.services.task_logs import change_task_log_status
-from .models import (
-    FamilyGroup,
+from motivation.models import (
+    User,
     FamilyMembership,
     FamilyInviteCode,
     Task,
     TaskLog,
     WeeklyReport,
 )
-from django.db.models import Prefetch, QuerySet
-from django.conf import settings
+from motivation.services.task_logs import change_task_log_status
 from .serializers import (
     UserSerializer,
     FamilyInviteCodeCreateSerializer,
@@ -27,51 +26,72 @@ from .serializers import (
     TaskLogHistorySerializer,
 )
 
-User = get_user_model()
 
+class ServiceOrUserPermission(permissions.BasePermission):
+    """
+    Разрешает запрос, если:
+    - успешно прошла TelegramInitDataAuthentication (request.user — юзер);
+    - либо успешно прошла BFFServiceAuthentication (request.auth == 'bff-service').
+    """
 
-class IsParentOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
-        if getattr(settings, "DISABLE_AUTH", False):
+        user = getattr(request, "user", None)
+        if user and getattr(user, "is_authenticated", False):
             return True
-        if request.method in permissions.SAFE_METHODS:
+        if getattr(request, "auth", None) == "bff-service":
             return True
-        return (
-            request.user
-            and request.user.is_authenticated
-            and getattr(request.user, "is_parent", False)
-        )
+        return False
+
+
+def _is_bff(request) -> bool:
+    return getattr(request, "auth", None) == "bff-service"
+
+
+def _is_authenticated(request) -> bool:
+    user = getattr(request, "user", None)
+    return bool(user and getattr(user, "is_authenticated", False))
+
+
+def _family_child_ids(user) -> QuerySet:
+    """
+    Возвращает QuerySet id детей, состоящих в тех же семьях, что и `user`.
+
+    Используется для фильтрации всех родительских выборок,
+    чтобы родитель не видел задачи/логи/отчёты чужих семей.
+    """
+    family_ids = FamilyMembership.objects.filter(user=user).values_list(
+        "family_id", flat=True
+    )
+    return FamilyMembership.objects.filter(
+        family_id__in=family_ids,
+        user__role=User.Role.CHILD,
+    ).values_list("user_id", flat=True)
 
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [ServiceOrUserPermission]
     serializer_class = UserSerializer
 
     def get_queryset(self) -> QuerySet:
-        user = self.request.user
+        request = self.request
         queryset = User.objects.all()
 
-        if getattr(settings, "DISABLE_AUTH", False) or not user.is_authenticated:
-            is_child_param = self.request.query_params.get("is_child")
+        # BFF-сервис — доверенный, отдаём всех (фильтр по query_param is_child).
+        if _is_bff(request) or not _is_authenticated(request):
+            is_child_param = request.query_params.get("is_child")
             if is_child_param is not None:
-                is_child = is_child_param.lower() in ["true", "1"]
-                role_val = User.Role.CHILD if hasattr(User, "Role") else "CHILD"
-                if not is_child:
-                    role_val = "PARENT"
+                is_child = is_child_param.lower() in ("true", "1")
+                role_val = User.Role.CHILD if is_child else User.Role.PARENT
                 queryset = queryset.filter(role=role_val)
             return queryset
 
-        if getattr(user, "role", None) == "CHILD":
+        user = request.user
+
+        if getattr(user, "role", None) == User.Role.CHILD:
             return queryset.filter(id=user.id)
 
-        if getattr(user, "role", None) == "PARENT":
-            family_ids = FamilyMembership.objects.filter(
-                user=user, role="PARENT"
-            ).values_list("family_id", flat=True)
-
-            child_ids = FamilyMembership.objects.filter(
-                family_id__in=family_ids, role="CHILD"
-            ).values_list("user_id", flat=True)
-
+        if getattr(user, "role", None) == User.Role.PARENT:
+            child_ids = _family_child_ids(user)
             return queryset.filter(id__in=child_ids)
 
         return queryset.none()
@@ -79,13 +99,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
 class FamilyInviteCodeViewSet(viewsets.ModelViewSet):
     queryset = FamilyInviteCode.objects.all()
-    permission_classes = [
-        (
-            permissions.AllowAny
-            if getattr(settings, "DISABLE_AUTH", False)
-            else permissions.IsAuthenticated
-        )
-    ]
+    permission_classes = [ServiceOrUserPermission]
 
     def get_serializer_class(self):
         return FamilyInviteCodeCreateSerializer
@@ -106,32 +120,32 @@ class FamilyInviteCodeViewSet(viewsets.ModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
-    permission_classes = [
-        (
-            permissions.AllowAny
-            if getattr(settings, "DISABLE_AUTH", False)
-            else permissions.IsAuthenticated
-        ),
-        IsParentOrReadOnly,
-    ]
+    permission_classes = [ServiceOrUserPermission]
 
     def get_queryset(self):
-        user = self.request.user
-        if getattr(settings, "DISABLE_AUTH", False) or not user.is_authenticated:
+        request = self.request
+
+        if _is_bff(request) or not _is_authenticated(request):
             queryset = Task.objects.all()
-            child_id = self.request.query_params.get("child_id")
+            child_id = request.query_params.get("child_id")
             if child_id:
                 queryset = queryset.filter(child_id=child_id)
             return queryset
 
+        user = request.user
+
         if getattr(user, "is_child", False):
             return Task.objects.filter(child=user, is_active=True)
 
-        queryset = Task.objects.all()
-        child_id = self.request.query_params.get("child_id")
-        if child_id:
-            queryset = queryset.filter(child_id=child_id)
-        return queryset
+        if getattr(user, "is_parent", False):
+            child_ids = _family_child_ids(user)
+            queryset = Task.objects.filter(child_id__in=child_ids)
+            child_id = request.query_params.get("child_id")
+            if child_id:
+                queryset = queryset.filter(child_id=child_id)
+            return queryset
+
+        return Task.objects.none()
 
     @action(detail=False, methods=["get"], url_path="weekly-review")
     def weekly_review(self, request):
@@ -141,6 +155,29 @@ class TaskViewSet(viewsets.ModelViewSet):
                 {"detail": "Параметр child_id обязателен."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Проверка доступа: родитель может смотреть только детей своей семьи.
+        if not _is_bff(request) and _is_authenticated(request):
+            user = request.user
+            if getattr(user, "is_parent", False):
+                allowed_ids = set(_family_child_ids(user))
+                try:
+                    child_id_int = int(child_id)
+                except (TypeError, ValueError):
+                    return Response(
+                        {"detail": "child_id должен быть числом."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if child_id_int not in allowed_ids:
+                    return Response(
+                        {"detail": "Ребёнок не найден в вашей семье."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+            elif getattr(user, "is_child", False) and str(user.id) != str(child_id):
+                return Response(
+                    {"detail": "Нельзя смотреть чужие задания."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         week_start_str = request.query_params.get("week_start")
         if week_start_str:
@@ -160,10 +197,13 @@ class TaskViewSet(viewsets.ModelViewSet):
         tasks = (
             Task.objects.filter(child_id=child_id, is_active=True)
             .select_related("child")
+            .order_by("title", "id")
             .prefetch_related(
                 Prefetch(
                     "logs",
-                    queryset=TaskLog.objects.filter(date__range=[start_date, end_date]),
+                    queryset=TaskLog.objects.filter(
+                        date__range=[start_date, end_date]
+                    ).order_by("date", "id"),
                     to_attr="filtered_logs",
                 )
             )
@@ -175,7 +215,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             approved_count = 0
             pending_count = 0
             rejected_count = 0
-            calculated_amount = 0
+            calculated_amount = 0.0
 
             for log in task.filtered_logs:
                 if log.status == TaskLog.Status.APPROVED:
@@ -197,11 +237,11 @@ class TaskViewSet(viewsets.ModelViewSet):
 
             child_obj = task.child
             child_name = (
-                child_obj.first_name or child_obj.username if child_obj else "Ребенок"
+                (child_obj.first_name or child_obj.username) if child_obj else "Ребенок"
             )
 
-            child_age = 12
-            if getattr(child_obj, "birth_date", None):
+            child_age = None
+            if child_obj and getattr(child_obj, "birth_date", None):
                 today = date.today()
                 child_age = (
                     today.year
@@ -245,22 +285,19 @@ class TaskViewSet(viewsets.ModelViewSet):
 class TaskLogViewSet(viewsets.ModelViewSet):
     queryset = TaskLog.objects.all()
     serializer_class = TaskLogSerializer
-    permission_classes = [
-        (
-            permissions.AllowAny
-            if getattr(settings, "DISABLE_AUTH", False)
-            else permissions.IsAuthenticated
-        )
-    ]
+    permission_classes = [ServiceOrUserPermission]
 
     def get_queryset(self):
-        user = self.request.user
+        request = self.request
 
-        if getattr(settings, "DISABLE_AUTH", False) or not user.is_authenticated:
+        if _is_bff(request) or not _is_authenticated(request):
             return TaskLog.objects.all()
+
+        user = request.user
 
         if getattr(user, "is_parent", False):
-            return TaskLog.objects.all()
+            child_ids = _family_child_ids(user)
+            return TaskLog.objects.filter(task__child_id__in=child_ids)
 
         if getattr(user, "is_child", False):
             return TaskLog.objects.filter(task__child=user)
@@ -278,13 +315,13 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         task = serializer.validated_data["task"]
         user = self.request.user
 
-        if not getattr(settings, "DISABLE_AUTH", False) and user.is_authenticated:
+        if _is_authenticated(self.request):
             if getattr(user, "is_child", False) and task.child != user:
                 raise permissions.PermissionDenied("Нельзя отмечать чужие задания.")
 
         earned = (
             task.price_per_run
-            if serializer.validated_data.get("status") in ["DONE", "APPROVED"]
+            if serializer.validated_data.get("status") in ("DONE", "APPROVED")
             else 0
         )
         log = serializer.save(earned_amount=earned)
@@ -305,12 +342,8 @@ class TaskLogViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-approve")
     def bulk_approve(self, request):
-        disable_auth = getattr(settings, "DISABLE_AUTH", False)
-
-        if not disable_auth:
-            if not request.user.is_authenticated or not getattr(
-                request.user, "is_parent", False
-            ):
+        if _is_authenticated(request):
+            if not getattr(request.user, "is_parent", False):
                 return Response(
                     {"detail": "Только родитель может массово подтверждать задания."},
                     status=status.HTTP_403_FORBIDDEN,
@@ -323,10 +356,13 @@ class TaskLogViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        logs = TaskLog.objects.filter(
-            id__in=log_ids, status=TaskLog.Status.DONE_BY_CHILD
-        )
+        # Родитель может подтверждать только логи детей своей семьи.
+        qs = TaskLog.objects.filter(id__in=log_ids, status=TaskLog.Status.DONE_BY_CHILD)
+        if _is_authenticated(request) and getattr(request.user, "is_parent", False):
+            child_ids = _family_child_ids(request.user)
+            qs = qs.filter(task__child_id__in=child_ids)
 
+        logs = list(qs)
         updated_count = 0
         for log in logs:
             change_task_log_status(log.id, TaskLog.Status.APPROVED, request.user)
@@ -335,7 +371,7 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 "detail": f"Успешно подтверждено логов: {updated_count}.",
-                "approved_ids": list(logs.values_list("id", flat=True)),
+                "approved_ids": [log.id for log in logs],
             },
             status=status.HTTP_200_OK,
         )
@@ -344,28 +380,29 @@ class TaskLogViewSet(viewsets.ModelViewSet):
 class WeeklyReportViewSet(viewsets.ModelViewSet):
     queryset = WeeklyReport.objects.all()
     serializer_class = WeeklyReportSerializer
-    permission_classes = [
-        (
-            permissions.AllowAny
-            if getattr(settings, "DISABLE_AUTH", False)
-            else permissions.IsAuthenticated
-        )
-    ]
+    permission_classes = [ServiceOrUserPermission]
 
     def get_queryset(self) -> QuerySet:
-        user = self.request.user
-        if getattr(settings, "DISABLE_AUTH", False) or not user.is_authenticated:
+        request = self.request
+
+        if _is_bff(request) or not _is_authenticated(request):
             queryset = WeeklyReport.objects.all()
-            child_id = self.request.query_params.get("child_id")
+            child_id = request.query_params.get("child_id")
             if child_id:
                 queryset = queryset.filter(child_id=child_id)
             return queryset
 
+        user = request.user
+
         if getattr(user, "is_child", False):
             return WeeklyReport.objects.filter(child=user)
 
-        queryset = WeeklyReport.objects.all()
-        child_id = self.request.query_params.get("child_id")
-        if child_id:
-            queryset = queryset.filter(child_id=child_id)
-        return queryset
+        if getattr(user, "is_parent", False):
+            child_ids = _family_child_ids(user)
+            queryset = WeeklyReport.objects.filter(child_id__in=child_ids)
+            child_id = request.query_params.get("child_id")
+            if child_id:
+                queryset = queryset.filter(child_id=child_id)
+            return queryset
+
+        return WeeklyReport.objects.none()

@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const childId = searchParams.get("child_id")
 
-    const headers: Record<string, string> = {}
-
-
     const params: Record<string, any> = {}
-    if (childId) {
-      params.child_id = childId
-    }
+    if (childId) params.child_id = childId
 
-    const res = await serverApi.get("/weekly-reports/", { params, headers })
+    const res = await serverApi.get("/api/v1/weekly-reports/", {
+      params,
+      headers: buildDjangoHeaders(request),
+    })
     return NextResponse.json(res.data)
   } catch (error: any) {
     return NextResponse.json(
@@ -27,9 +26,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const headers: Record<string, string> = {}
-
-    const res = await serverApi.post("/weekly-reports/", body, { headers })
+    const res = await serverApi.post("/api/v1/weekly-reports/", body, {
+      headers: buildDjangoHeaders(request),
+    })
     return NextResponse.json(res.data)
   } catch (error: any) {
     return NextResponse.json(

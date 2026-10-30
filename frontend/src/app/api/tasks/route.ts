@@ -1,27 +1,23 @@
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const childId = searchParams.get("child_id")
 
-    const headers: Record<string, string> = {}
-
     const params: Record<string, any> = {}
-    if (childId) {
-      params.child_id = childId
-    }
+    if (childId) params.child_id = childId
 
-    const res = await serverApi.get("/api/tasks/", {
+    const res = await serverApi.get("/api/v1/tasks/", {
       params,
-      headers,
+      headers: buildDjangoHeaders(request),
     })
-
     return NextResponse.json(res.data)
   } catch (error: any) {
     return NextResponse.json(
-      { error: "Ошибка при получении задач" },
+      { error: error.response?.data || "Ошибка при получении задач" },
       { status: error.response?.status || 500 },
     )
   }
@@ -30,14 +26,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const headers: Record<string, string> = {}
-
-    const res = await serverApi.post("/api/tasks/", body, { headers })
-
+    const res = await serverApi.post("/api/v1/tasks/", body, {
+      headers: buildDjangoHeaders(request),
+    })
     return NextResponse.json(res.data)
   } catch (error: any) {
     return NextResponse.json(
-      { error: "Ошибка при создании задачи" },
+      { error: error.response?.data || "Ошибка при создании задачи" },
       { status: error.response?.status || 500 },
     )
   }

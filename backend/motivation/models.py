@@ -417,6 +417,9 @@ class TaskLog(models.Model):
     пока соответствующая неделя не закрыта.
 
     earned_amount хранит денежную сумму конкретного выполнения.
+    Пересчёт earned_amount выполняется сервисом
+    motivation.services.task_logs.change_task_log_status
+    при изменении статуса, а не в save().
     """
 
     class Status(models.TextChoices):
@@ -474,22 +477,13 @@ class TaskLog(models.Model):
         verbose_name_plural = "Логи выполнения заданий"
 
         unique_together = ("task", "date")
+        ordering = ["-date", "-id"]
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+    def __str__(self):
+        """Возвращает название задания, дату и текущий статус."""
 
-        # Автоматический пересчет копеек для недели этого лога при любом изменении статуса
-        if self.task:
-            start_date = self.date - timedelta(days=self.date.weekday())
-            end_date = start_date + timedelta(days=6)
-            from motivation.services.task_logs import recalculate_task_logs_earnings
-
-            recalculate_task_logs_earnings(self.task, start_date, end_date)
-
-            def __str__(self):
-                """Возвращает название задания, дату и текущий статус."""
-
-                return f"{self.task.title} — {self.date} — {self.get_status_display()}"
+        task_title = self.task.title if self.task_id else "Без задания"
+        return f"{task_title} — {self.date} — {self.get_status_display()}"
 
 
 # ----------------------------------------------------------------------
