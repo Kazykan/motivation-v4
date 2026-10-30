@@ -6,7 +6,7 @@ interface LogChange {
   logId?: number | null
   taskId: number
   date: string
-  status: "DONE" | "APPROVED" | "REJECTED"
+  status: "DONE" | "APPROVED" | "REJECTED" | "CANCELLED"
 }
 
 interface LogSyncState {

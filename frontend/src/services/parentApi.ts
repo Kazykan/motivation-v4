@@ -1,6 +1,6 @@
 import { api } from "@/lib/axios"
 
-export type TaskLogStatus = "DONE" | "APPROVED" | "REJECTED"
+export type TaskLogStatus = "DONE" | "APPROVED" | "REJECTED" | "CANCELLED"
 
 export const parentApi = {
   // Все запросы — строго на BFF-роуты Next.js (/api/...).

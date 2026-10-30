@@ -5,10 +5,10 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { Check, Clock3, X } from "lucide-react"
+import { Check, Clock3, X, Trash2 } from "lucide-react"
 import { LogHistoryViewer } from "@/components/LogHistoryViewer"
 
-export type LogStatus = "DONE" | "APPROVED" | "REJECTED"
+export type LogStatus = "DONE" | "APPROVED" | "REJECTED" | "CANCELLED"
 
 interface LogStatusEditorProps {
   logId: number
@@ -102,6 +102,13 @@ export function LogStatusEditor({
         </Button>
       </div>
 
+      {status === "CANCELLED" && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+          Отметка удалена. Выберите новый статус, чтобы восстановить запись. История изменений
+          сохранена.
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-2">
         {STATUS_OPTIONS.map((option) => {
           const Icon = option.icon
@@ -125,11 +132,9 @@ export function LogStatusEditor({
               <Icon
                 className={cn("h-5 w-5", isActive ? option.iconClass : "text-muted-foreground")}
               />
-
               <span className="text-center text-xs font-semibold leading-tight">
                 {option.label}
               </span>
-
               {isActive && <span className="text-[9px] font-medium">Текущий</span>}
             </button>
           )
@@ -145,6 +150,19 @@ export function LogStatusEditor({
       )}
 
       <Separator />
+
+      {logId > 0 && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+          disabled={saving || status === "CANCELLED"}
+          onClick={() => handleStatusChange("CANCELLED")}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          {status === "CANCELLED" ? "Отметка удалена" : "Удалить отметку"}
+        </Button>
+      )}
 
       {logId > 0 ? (
         <LogHistoryViewer logId={logId} />

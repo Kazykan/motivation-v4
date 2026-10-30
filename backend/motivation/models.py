@@ -429,6 +429,7 @@ class TaskLog(models.Model):
         DONE_BY_CHILD = "DONE", "Отмечено ребенком"
         APPROVED = "APPROVED", "Подтверждено родителем"
         REJECTED = "REJECTED", "Отклонено родителем"
+        CANCELLED = "CANCELLED", "Отменено (удалено)"
 
     task = models.ForeignKey(
         Task,

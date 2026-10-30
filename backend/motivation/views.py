@@ -1,5 +1,6 @@
 # backend/motivation/views.py
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import QuerySet, Prefetch
@@ -319,15 +320,13 @@ class TaskLogViewSet(viewsets.ModelViewSet):
             if getattr(user, "is_child", False) and task.child != user:
                 raise permissions.PermissionDenied("Нельзя отмечать чужие задания.")
 
-        earned = (
-            task.price_per_run
-            if serializer.validated_data.get("status") in ("DONE", "APPROVED")
-            else 0
-        )
-        log = serializer.save(earned_amount=earned)
+        initial_status = serializer.validated_data.get("status", TaskLog.Status.PENDING)
 
-        initial_status = serializer.validated_data.get("status")
-        if initial_status and initial_status != TaskLog.Status.PENDING:
+        # Сохраняем как PENDING, чтобы change_task_log_status зафиксировал переход в истории
+        serializer.validated_data["status"] = TaskLog.Status.PENDING
+        log = serializer.save(earned_amount=Decimal("0.00"))
+
+        if initial_status != TaskLog.Status.PENDING:
             change_task_log_status(log.id, initial_status, user)
 
     def perform_update(self, serializer):

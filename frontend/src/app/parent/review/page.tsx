@@ -10,13 +10,26 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { Check, Clock3, ChevronLeft, X, CheckCircle2, UserRound } from "lucide-react"
+import {
+  Check,
+  Clock3,
+  ChevronLeft,
+  X,
+  CheckCircle2,
+  UserRound,
+  RotateCcw,
+  Trash2,
+} from "lucide-react"
 import { WeeklyReviewItem } from "@/types/props"
 import { ParentReviewCard } from "@/components/ParentReviewCard"
 import { LogStatus } from "@/components/LogStatusEditor"
 import { Button } from "@/components/ui/button"
 
 const WEEK_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+// ─── ВРЕМЕННЫЙ ФЛАГ ДЛЯ ОТЛАДКИ ────────────────────────────────
+// Поставьте false или удалите блок целиком, когда закончите.
+const DEBUG_RAW = true
 
 export default function ParentReviewPage() {
   const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
@@ -26,21 +39,69 @@ export default function ParentReviewPage() {
   const queryClient = useQueryClient()
   const { queueChange } = useLogSyncStore()
 
-  const { data: reviewsData = [], isLoading: reviewsLoading } = useQuery({
+  const {
+    data: reviewsData = [],
+    isLoading: reviewsLoading,
+    error,
+  } = useQuery({
     queryKey: ["weekly-review", selectedChildId],
     queryFn: async () => {
+      let result: any
       if (selectedChildId === "ALL") {
         if (children.length === 0) return []
         const promises = children.map((child: any) => parentApi.getWeeklyReview(child.id))
         const results = await Promise.all(promises)
-        return results.flat()
+        result = results.flat()
       } else {
         const data = await parentApi.getWeeklyReview(Number(selectedChildId))
-        return Array.isArray(data) ? data : []
+        result = Array.isArray(data) ? data : []
       }
+
+      // ─── ВРЕМЕННЫЙ ЛОГ ────────────────────────────────────────
+      if (DEBUG_RAW) {
+        console.group(`[weekly-review] child=${selectedChildId}`)
+        console.log("raw:", result)
+        if (Array.isArray(result)) {
+          console.table(
+            result.map((item: any) => ({
+              taskId: item.taskId,
+              title: item.title,
+              scheduleType: item.scheduleType,
+              weeklyPrice: item.weeklyPrice,
+              targetCount: item.targetCount,
+              targetDays: JSON.stringify(item.targetDays),
+              approved: item.summary?.approvedCount,
+              pending: item.summary?.pendingCount,
+              rejected: item.summary?.rejectedCount,
+              calcAmount: item.summary?.calculatedAmount,
+              logsCount: item.logs?.length,
+            })),
+          )
+          result.forEach((item: any) => {
+            console.group(`task ${item.taskId} · ${item.title}`)
+            console.log("summary:", item.summary)
+            console.table(
+              (item.logs || []).map((l: any) => ({
+                id: l.id,
+                date: l.date,
+                status: l.status,
+                earned_amount: l.earned_amount,
+              })),
+            )
+            console.groupEnd()
+          })
+        }
+        console.groupEnd()
+      }
+
+      return result
     },
     enabled: !childrenLoading && children.length > 0,
   })
+
+  if (DEBUG_RAW && error) {
+    console.error("[weekly-review] query error:", error)
+  }
 
   const loading = childrenLoading || reviewsLoading
 
@@ -81,10 +142,16 @@ export default function ParentReviewPage() {
           Number(item.weeklyPrice) / (item.targetCount || item.targetDays?.length || 1)
         let oldStatus = existingLogIndex >= 0 ? item.logs[existingLogIndex].status : "NONE"
 
+        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
+
         if (existingLogIndex >= 0) {
-          updatedLogs[existingLogIndex] = { ...updatedLogs[existingLogIndex], status }
+          updatedLogs[existingLogIndex] = {
+            ...updatedLogs[existingLogIndex],
+            status,
+            earned_amount: earnedAmount,
+          }
         } else {
-          updatedLogs.push({ id: Date.now(), date, status, earned_amount: pricePerRun })
+          updatedLogs.push({ id: Date.now(), date, status, earned_amount: earnedAmount })
         }
 
         let currentAmount = Number(item.summary.calculatedAmount || 0)
@@ -157,6 +224,18 @@ export default function ParentReviewPage() {
           </Badge>
         </div>
 
+        {/* ─── ВРЕМЕННЫЙ ДАМП activeTaskView ─────────────────────── */}
+        {DEBUG_RAW && (
+          <details className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs">
+            <summary className="cursor-pointer font-semibold text-rose-800">
+              [DEBUG] activeTaskView JSON
+            </summary>
+            <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(activeTaskView, null, 2)}
+            </pre>
+          </details>
+        )}
+
         <Card className="border-slate-200 bg-white shadow-xs">
           <CardContent className="flex flex-col gap-4 p-4">
             <div className="flex items-center gap-3">
@@ -188,6 +267,7 @@ export default function ParentReviewPage() {
                   const isApproved = status === "APPROVED"
                   const isPending = status === "DONE"
                   const isRejected = status === "REJECTED"
+                  const isCancelled = status === "CANCELLED"
                   const isScheduled = scheduledDays.includes(idx + 1)
 
                   return (
@@ -200,6 +280,7 @@ export default function ParentReviewPage() {
                           isApproved && "bg-emerald-100 text-emerald-700",
                           isPending && "bg-amber-200 text-amber-900",
                           isRejected && "bg-red-100 text-red-700",
+                          isCancelled && "bg-slate-100 text-slate-400",
                           isScheduled && !log && "border border-amber-300 text-slate-700",
                           !isScheduled && !log && "text-slate-300",
                         )}
@@ -210,6 +291,8 @@ export default function ParentReviewPage() {
                           <Clock3 className="h-3.5 w-3.5" />
                         ) : isRejected ? (
                           <X className="h-3.5 w-3.5" />
+                        ) : isCancelled ? (
+                          <Trash2 className="h-3.5 w-3.5" />
                         ) : (
                           date.getDate()
                         )}
@@ -229,6 +312,7 @@ export default function ParentReviewPage() {
             const isPending = log.status === "DONE"
             const isApproved = log.status === "APPROVED"
             const isRejected = log.status === "REJECTED"
+            const isCancelled = log.status === "CANCELLED"
             const logDate = new Date(`${log.date}T12:00:00`)
             const dayNameStr = logDate.toLocaleDateString("ru-RU", {
               weekday: "long",
@@ -241,7 +325,9 @@ export default function ParentReviewPage() {
                 ? "Подтверждено"
                 : isRejected
                   ? "Отклонено"
-                  : "Неизвестный статус"
+                  : isCancelled
+                    ? "Удалено"
+                    : "Неизвестный статус"
             const editorInfo = getLogEditorInfo()
 
             return (
@@ -252,6 +338,7 @@ export default function ParentReviewPage() {
                   isPending && "border-amber-200 bg-amber-50/40",
                   isApproved && "border-emerald-200 bg-emerald-50/30",
                   isRejected && "border-red-200 bg-red-50/40",
+                  isCancelled && "border-slate-200 bg-slate-50/60",
                 )}
               >
                 <CardContent className="flex flex-col gap-3 p-4">
@@ -267,7 +354,9 @@ export default function ParentReviewPage() {
                             ? "Подтверждено родителем"
                             : isRejected
                               ? "Отклонено родителем"
-                              : "Статус не определён"}
+                              : isCancelled
+                                ? "Отметка удалена (история сохранена)"
+                                : "Статус не определён"}
                       </span>
                     </div>
 
@@ -278,6 +367,7 @@ export default function ParentReviewPage() {
                         isPending && "bg-amber-100 text-amber-800",
                         isApproved && "bg-emerald-100 text-emerald-800",
                         isRejected && "bg-red-100 text-red-800",
+                        isCancelled && "bg-slate-200 text-slate-600",
                       )}
                     >
                       {isPending ? (
@@ -286,12 +376,19 @@ export default function ParentReviewPage() {
                         <Check className="mr-1 h-3 w-3" />
                       ) : isRejected ? (
                         <X className="mr-1 h-3 w-3" />
+                      ) : isCancelled ? (
+                        <Trash2 className="mr-1 h-3 w-3" />
                       ) : null}
                       {statusLabel}
                     </Badge>
                   </div>
 
-                  <span className="text-base font-extrabold text-slate-900">
+                  <span
+                    className={cn(
+                      "text-base font-extrabold",
+                      isCancelled ? "text-slate-400 line-through" : "text-slate-900",
+                    )}
+                  >
                     {formatMoney(log.earned_amount ?? 0)}
                   </span>
 
@@ -334,6 +431,24 @@ export default function ParentReviewPage() {
                         Подтвердить
                       </Button>
                     </div>
+                  )}
+
+                  {isCancelled && (
+                    <Button
+                      variant="outline"
+                      className="mt-1 h-10 w-full cursor-pointer border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                      onClick={() => {
+                        handleChangeLogStatus(
+                          log.id,
+                          "APPROVED",
+                          activeTaskView.taskId,
+                          log.date,
+                        ).catch((error) => console.error("Ошибка восстановления:", error))
+                      }}
+                    >
+                      <RotateCcw className="mr-1 h-4 w-4" />
+                      Восстановить
+                    </Button>
                   )}
                 </CardContent>
               </Card>
@@ -380,6 +495,52 @@ export default function ParentReviewPage() {
           </button>
         ))}
       </div>
+
+      {/* ─── ВРЕМЕННЫЙ ДАМП reviewsData НА СТРАНИЦЕ ─────────────── */}
+      {DEBUG_RAW && (
+        <details open className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs">
+          <summary className="cursor-pointer font-semibold text-rose-800">
+            [DEBUG] weekly-review: {Array.isArray(reviewsData) ? reviewsData.length : 0} item(s) ·
+            queryKey=["weekly-review","{selectedChildId}"] · loading={String(reviewsLoading)}
+          </summary>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200"
+              onClick={() => {
+                navigator.clipboard.writeText(JSON.stringify(reviewsData, null, 2))
+              }}
+            >
+              Скопировать JSON
+            </button>
+            <button
+              type="button"
+              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200"
+              onClick={() => {
+                const cached = queryClient.getQueryData(["weekly-review", selectedChildId])
+                console.log("[cached]", cached)
+                alert("См. console.log → [cached]")
+              }}
+            >
+              Кэш в консоль
+            </button>
+            <button
+              type="button"
+              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200"
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
+              }}
+            >
+              Инвалидировать
+            </button>
+          </div>
+
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-tight">
+            {JSON.stringify(reviewsData, null, 2)}
+          </pre>
+        </details>
+      )}
 
       {loading ? (
         <div className="py-12 text-center text-sm text-slate-500">Загрузка заданий...</div>

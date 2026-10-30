@@ -1,5 +1,7 @@
 import React from "react"
 
+export type LogStatusValue = "DONE" | "APPROVED" | "REJECTED" | "CANCELLED"
+
 export interface ChildCardProps {
   child: {
     id: number
@@ -82,7 +84,7 @@ export interface TaskCardForParentProps {
 export interface WeeklyReviewTaskLog {
   id: number
   date: string
-  status: "APPROVED" | "DONE" | "REJECTED" | "PENDING"
+  status: "APPROVED" | "DONE" | "REJECTED" | "PENDING" | "CANCELLED"
   earned_amount: string | number
 }
 

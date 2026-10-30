@@ -83,14 +83,14 @@ def change_task_log_status(log_id, new_status, user):
     log.status = new_status
     log.updated_by = changed_by_user
     log.updated_by_parent = is_parent_user
-    log.save(
-        update_fields=[
-            "status",
-            "updated_by",
-            "updated_by_parent",
-            "updated_at",
-        ]
-    )
+
+    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
+
+    if new_status == TaskLog.Status.CANCELLED:
+        log.earned_amount = Decimal("0.00")
+        update_fields.append("earned_amount")
+
+    log.save(update_fields=update_fields)
 
     # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
     if log.task_id:

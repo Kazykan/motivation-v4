@@ -8,10 +8,18 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { Check, Clock3, CalendarDays, CheckCircle2, ChevronRight, X } from "lucide-react"
+import {
+  Check,
+  Clock3,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  X,
+  AlertTriangle,
+  Trash2,
+} from "lucide-react"
 import { WeeklyReviewItem } from "@/types/props"
 import { LogStatusEditor, LogStatus } from "@/components/LogStatusEditor"
-import { LogHistoryViewer } from "@/components/LogHistoryViewer"
 import { useLogSyncStore } from "@/store/useLogSyncStore"
 
 const WEEK_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -40,6 +48,7 @@ export function ParentReviewCard({
     logId: number | null
     date: string
     status: LogStatus
+    isOutOfSchedule: boolean
   } | null>(null)
 
   const buffer = useLogSyncStore((state) => state.buffer)
@@ -75,7 +84,6 @@ export function ParentReviewCard({
 
   const pendingLogs = taskLogs.filter((log) => log.status === "DONE")
   const approvedLogs = taskLogs.filter((log) => log.status === "APPROVED")
-  const rejectedLogs = taskLogs.filter((log) => log.status === "REJECTED")
 
   const scheduledDays = item.targetDays ?? []
   const isFlexible = item.scheduleType === "FLEXIBLE"
@@ -84,6 +92,20 @@ export function ParentReviewCard({
   const approvedCount = approvedLogs.length
   const pendingCount = pendingLogs.length
   const currentPendingLog = pendingLogs[0] ?? null
+
+  // ── Логи, дата которых вне целевых дней (только для FIXED) ──
+  // CANCELLED исключаем: пользователь уже "погасил" отметку,
+  // она не должна висеть как конфликт.
+  const outOfScheduleLogs = isFlexible
+    ? []
+    : taskLogs.filter((log) => {
+        if (log.status === "CANCELLED") return false
+        const d = new Date(`${log.date}T12:00:00`)
+        const isoWeekday = d.getDay() === 0 ? 7 : d.getDay()
+        return !scheduledDays.includes(isoWeekday)
+      })
+
+  const hasOutOfScheduleWarning = outOfScheduleLogs.length > 0
 
   const handleStatusChange = async (logId: number | null, status: LogStatus) => {
     await onChangeLogStatus(logId, status, item.taskId, selectedCell?.date)
@@ -114,7 +136,6 @@ export function ParentReviewCard({
 
         <div className="space-y-2">
           <h3 className="text-base font-bold text-foreground">{item.title}</h3>
-
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <CalendarDays className="h-3.5 w-3.5 shrink-0" />
             <span>{weekLabel}</span>
@@ -124,7 +145,6 @@ export function ParentReviewCard({
         <div className="space-y-3 rounded-xl bg-muted/40 p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">Выполнение за неделю</span>
-
             <span className="text-xs text-muted-foreground">
               {isFlexible
                 ? `${approvedCount} из ${targetCount} выполнено`
@@ -146,16 +166,25 @@ export function ParentReviewCard({
 
               const dayIndex = index + 1
               const isScheduled = !isFlexible && scheduledDays.includes(dayIndex)
-              const isClickable = isFlexible || isScheduled
 
               const isApproved = status === "APPROVED"
               const isPending = status === "DONE"
               const isRejected = status === "REJECTED"
+              const isCancelled = status === "CANCELLED"
+
+              const hasLog = !!log
+              // "вне расписания" — только для живых логов, CANCELLED уже погашен
+              const isOutOfSchedule = !isFlexible && hasLog && !isScheduled && !isCancelled
+              // кликабельно, если день в расписании / гибкое / есть любой лог
+              // (в т.ч. CANCELLED — чтобы восстановить)
+              const isClickable = isFlexible || isScheduled || hasLog
 
               let statusLabel = "—"
-              if (isApproved) statusLabel = "Готово"
+              if (isOutOfSchedule) statusLabel = "Вне"
+              else if (isApproved) statusLabel = "Готово"
               else if (isPending) statusLabel = "Ожидает"
               else if (isRejected) statusLabel = "Отказ"
+              else if (isCancelled) statusLabel = "Удалено"
               else if (isScheduled) statusLabel = "План"
 
               return (
@@ -169,6 +198,7 @@ export function ParentReviewCard({
                         logId: log ? log.id : null,
                         date: formattedDate,
                         status: status === "NONE" ? "DONE" : (status as LogStatus),
+                        isOutOfSchedule,
                       })
                     }
                   }}
@@ -184,6 +214,12 @@ export function ParentReviewCard({
                     </span>
                   )}
 
+                  {isOutOfSchedule && (
+                    <span className="absolute -top-1 -left-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-white">
+                      <AlertTriangle className="h-2 w-2" />
+                    </span>
+                  )}
+
                   <span className="text-[11px] font-medium text-muted-foreground">
                     {WEEK_DAYS[index]}
                   </span>
@@ -191,9 +227,18 @@ export function ParentReviewCard({
                   <div
                     className={cn(
                       "flex aspect-square w-full items-center justify-center rounded-lg border text-sm font-semibold transition-colors",
-                      isApproved && "border-emerald-200 bg-emerald-100 text-emerald-700",
-                      isPending && "border-amber-200 bg-amber-100 text-amber-800",
-                      isRejected && "border-red-200 bg-red-100 text-red-700",
+                      isOutOfSchedule &&
+                        "border-rose-200 bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+                      !isOutOfSchedule &&
+                        isApproved &&
+                        "border-emerald-200 bg-emerald-100 text-emerald-700",
+                      !isOutOfSchedule &&
+                        isPending &&
+                        "border-amber-200 bg-amber-100 text-amber-800",
+                      !isOutOfSchedule && isRejected && "border-red-200 bg-red-100 text-red-700",
+                      !isOutOfSchedule &&
+                        isCancelled &&
+                        "border-slate-200 bg-slate-100 text-slate-400",
                       !log &&
                         isClickable &&
                         status === "NONE" &&
@@ -209,6 +254,8 @@ export function ParentReviewCard({
                       <Clock3 className="h-4 w-4" />
                     ) : isRejected ? (
                       <X className="h-4 w-4" />
+                    ) : isCancelled ? (
+                      <Trash2 className="h-4 w-4" />
                     ) : (
                       date.getDate()
                     )}
@@ -217,9 +264,11 @@ export function ParentReviewCard({
                   <span
                     className={cn(
                       "text-[9px] font-medium leading-none",
-                      isApproved && "text-emerald-700",
-                      isPending && "text-amber-700",
-                      isRejected && "text-red-700",
+                      isOutOfSchedule && "text-rose-700",
+                      !isOutOfSchedule && isApproved && "text-emerald-700",
+                      !isOutOfSchedule && isPending && "text-amber-700",
+                      !isOutOfSchedule && isRejected && "text-red-700",
+                      !isOutOfSchedule && isCancelled && "text-slate-400",
                       status === "NONE" && isClickable && "text-muted-foreground",
                       !isClickable && "text-transparent",
                     )}
@@ -230,16 +279,56 @@ export function ParentReviewCard({
               )
             })}
           </div>
+
+          {hasOutOfScheduleWarning && (
+            <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="flex flex-col gap-1">
+                <span className="font-semibold">
+                  {outOfScheduleLogs.length}{" "}
+                  {outOfScheduleLogs.length === 1 ? "выполнение" : "выполнений"} вне расписания
+                </span>
+                <span className="text-rose-700">
+                  На эти даты есть логи, но дни убраны из расписания задания. Нажмите на день, чтобы
+                  изменить статус, «удалить» отметку (история сохранится) или верните день в
+                  настройках задания.
+                </span>
+                <span className="text-rose-700">
+                  Даты:{" "}
+                  {outOfScheduleLogs
+                    .map((l) =>
+                      new Date(`${l.date}T12:00:00`).toLocaleDateString("ru-RU", {
+                        day: "numeric",
+                        month: "short",
+                      }),
+                    )
+                    .join(", ")}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {selectedCell && (
-          <LogStatusEditor
-            logId={selectedCell.logId ?? 0}
-            date={selectedCell.date}
-            status={selectedCell.status}
-            onChangeStatus={handleStatusChange}
-            onClose={() => setSelectedCell(null)}
-          />
+          <div className="space-y-2">
+            {selectedCell.isOutOfSchedule && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-800">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Этот день вне расписания задания. Чтобы оплата за него учитывалась корректно,
+                  верните день в расписании, «удалите» отметку или отклоните выполнение.
+                </span>
+              </div>
+            )}
+
+            <LogStatusEditor
+              logId={selectedCell.logId ?? 0}
+              date={selectedCell.date}
+              status={selectedCell.status}
+              onChangeStatus={handleStatusChange}
+              onClose={() => setSelectedCell(null)}
+            />
+          </div>
         )}
 
         <div className="flex items-center justify-between">

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { TaskFormSheetProps } from "@/types/props"
+import { parentApi } from "@/services/parentApi"
 
 const DAYS_OF_WEEK = [
   { id: 1, label: "Пн" },
@@ -24,6 +25,16 @@ const DAYS_OF_WEEK = [
   { id: 6, label: "Сб" },
   { id: 7, label: "Вс" },
 ]
+
+const DAY_LABELS_SHORT: Record<number, string> = {
+  1: "Пн",
+  2: "Вт",
+  3: "Ср",
+  4: "Чт",
+  5: "Пт",
+  6: "Сб",
+  7: "Вс",
+}
 
 export function TaskFormSheet({
   isOpen,
@@ -90,6 +101,57 @@ export function TaskFormSheet({
     )
   }
 
+  // ── Проверка: не удаляются ли дни, на которые есть активные логи ──
+  const checkRemovedDaysHaveLogs = async (): Promise<{
+    removedDays: number[]
+    activeLogsByDate: Array<{ date: string; status: string; earned_amount: string }>
+  } | null> => {
+    if (!taskToEdit?.id) return null
+    if (scheduleType !== "FIXED") return null
+
+    const originalDays: number[] =
+      ((taskToEdit as any).target_days || []).map((d: any) =>
+        typeof d === "string" ? parseDayString(d) : Number(d),
+      ) || []
+
+    const removedDays = originalDays.filter((d) => !selectedDays.includes(d))
+    if (removedDays.length === 0) return null
+
+    const childId = taskToEdit.child_id || (taskToEdit as any).child
+    if (!childId) return null
+
+    let reviews: any[] = []
+    try {
+      const data = await parentApi.getWeeklyReview(Number(childId))
+      reviews = Array.isArray(data) ? data : []
+    } catch (e) {
+      // если не удалось получить обзоры — не блокируем сохранение,
+      // просто не показываем предупреждение
+      console.warn("Не удалось проверить логи перед изменением расписания:", e)
+      return null
+    }
+
+    const currentTask = reviews.find((r: any) => r.taskId === taskToEdit.id)
+    if (!currentTask || !Array.isArray(currentTask.logs)) {
+      return { removedDays, activeLogsByDate: [] }
+    }
+
+    const activeLogsByDate = currentTask.logs
+      .filter((l: any) => l.status !== "PENDING")
+      .map((l: any) => ({
+        date: l.date as string,
+        status: l.status as string,
+        earned_amount: String(l.earned_amount ?? "0"),
+      }))
+      .filter((l: any) => {
+        const d = new Date(`${l.date}T12:00:00`)
+        const isoWeekday = d.getDay() === 0 ? 7 : d.getDay()
+        return removedDays.includes(isoWeekday)
+      })
+
+    return { removedDays, activeLogsByDate }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!childId) {
@@ -101,6 +163,35 @@ export function TaskFormSheet({
     setError(null)
 
     try {
+      // ── Предупреждение об удалении дней с логами ──
+      const removalCheck = await checkRemovedDaysHaveLogs()
+      if (removalCheck && removalCheck.activeLogsByDate.length > 0) {
+        const daysText = removalCheck.removedDays.map((d) => DAY_LABELS_SHORT[d]).join(", ")
+        const logsText = removalCheck.activeLogsByDate
+          .map((l) => {
+            const d = new Date(`${l.date}T12:00:00`)
+            const label = d.toLocaleDateString("ru-RU", {
+              day: "numeric",
+              month: "short",
+            })
+            return `${label} (${l.status}, ${l.earned_amount} ₽)`
+          })
+          .join("\n")
+
+        const ok = window.confirm(
+          `Вы убираете дни: ${daysText}.\n\n` +
+            `На эти дни уже есть отметки о выполнении:\n${logsText}\n\n` +
+            `Существующие логи НЕ удаляются и НЕ пересчитываются автоматически — ` +
+            `они останутся в отчёте как «вне расписания».\n\n` +
+            `Вы уверены, что хотите сохранить изменения?`,
+        )
+
+        if (!ok) {
+          setLoading(false)
+          return
+        }
+      }
+
       const payload: any = {
         title,
         description,
@@ -155,7 +246,7 @@ export function TaskFormSheet({
               </option>
               {childrenList.map((child) => (
                 <option key={child.id} value={child.id}>
-                  {child.name}
+                  {child.first_name || child.name || `Ребенок #${child.id}`}
                 </option>
               ))}
             </select>
