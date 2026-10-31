@@ -1,7 +1,7 @@
 // frontend/src/app/parent/review/page.tsx
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { parentApi } from "@/services/parentApi"
 import { useChildren } from "@/hooks/useChildren"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -24,16 +24,20 @@ import { WeeklyReviewItem } from "@/types/props"
 import { ParentReviewCard } from "@/components/ParentReviewCard"
 import { LogStatus } from "@/components/LogStatusEditor"
 import { Button } from "@/components/ui/button"
+import { WeekNavigator } from "@/components/WeekNavigator"
+import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
 
 const WEEK_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
-// ─── ВРЕМЕННЫЙ ФЛАГ ДЛЯ ОТЛАДКИ ────────────────────────────────
-// Поставьте false или удалите блок целиком, когда закончите.
-const DEBUG_RAW = true
+const DEBUG_RAW = false
 
 export default function ParentReviewPage() {
   const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
   const [activeTaskView, setActiveTaskView] = useState<WeeklyReviewItem | null>(null)
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+
+  const weekStartIso = toISODate(weekStart)
+  const weekEndIso = toISODate(getWeekEnd(weekStart))
 
   const { children, isLoading: childrenLoading } = useChildren()
   const queryClient = useQueryClient()
@@ -44,22 +48,23 @@ export default function ParentReviewPage() {
     isLoading: reviewsLoading,
     error,
   } = useQuery({
-    queryKey: ["weekly-review", selectedChildId],
+    queryKey: ["weekly-review", selectedChildId, weekStartIso],
     queryFn: async () => {
       let result: any
       if (selectedChildId === "ALL") {
         if (children.length === 0) return []
-        const promises = children.map((child: any) => parentApi.getWeeklyReview(child.id))
+        const promises = children.map((child: any) =>
+          parentApi.getWeeklyReview(child.id, weekStartIso),
+        )
         const results = await Promise.all(promises)
         result = results.flat()
       } else {
-        const data = await parentApi.getWeeklyReview(Number(selectedChildId))
+        const data = await parentApi.getWeeklyReview(Number(selectedChildId), weekStartIso)
         result = Array.isArray(data) ? data : []
       }
 
-      // ─── ВРЕМЕННЫЙ ЛОГ ────────────────────────────────────────
       if (DEBUG_RAW) {
-        console.group(`[weekly-review] child=${selectedChildId}`)
+        console.group(`[weekly-review] child=${selectedChildId} week=${weekStartIso}`)
         console.log("raw:", result)
         if (Array.isArray(result)) {
           console.table(
@@ -75,21 +80,9 @@ export default function ParentReviewPage() {
               rejected: item.summary?.rejectedCount,
               calcAmount: item.summary?.calculatedAmount,
               logsCount: item.logs?.length,
+              weekClosed: item.weekClosed,
             })),
           )
-          result.forEach((item: any) => {
-            console.group(`task ${item.taskId} · ${item.title}`)
-            console.log("summary:", item.summary)
-            console.table(
-              (item.logs || []).map((l: any) => ({
-                id: l.id,
-                date: l.date,
-                status: l.status,
-                earned_amount: l.earned_amount,
-              })),
-            )
-            console.groupEnd()
-          })
         }
         console.groupEnd()
       }
@@ -105,11 +98,37 @@ export default function ParentReviewPage() {
 
   const loading = childrenLoading || reviewsLoading
 
+  const nextDisabled = useMemo(() => {
+    const currentMonday = getMonday(new Date())
+    return weekStart >= currentMonday
+  }, [weekStart])
+
+  const handlePrev = () => {
+    setActiveTaskView(null)
+    setWeekStart((d) => addWeeks(d, -1))
+  }
+  const handleNext = () => {
+    if (!nextDisabled) {
+      setActiveTaskView(null)
+      setWeekStart((d) => addWeeks(d, 1))
+    }
+  }
+
+  const invalidateCurrentWeek = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["weekly-review", selectedChildId, weekStartIso],
+    })
+  }
+
   const handleApprove = async (logId: number) => {
     try {
       await parentApi.bulkApproveLogs([logId])
-      queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
-    } catch (error) {
+      invalidateCurrentWeek()
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || error?.response?.data?.error
+      if (error?.response?.status === 400 && detail) {
+        alert(detail)
+      }
       console.error("Ошибка подтверждения:", error)
     }
   }
@@ -117,8 +136,12 @@ export default function ParentReviewPage() {
   const handleApproveAll = async (logIds: number[]) => {
     try {
       await parentApi.bulkApproveLogs(logIds)
-      queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
-    } catch (error) {
+      invalidateCurrentWeek()
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || error?.response?.data?.error
+      if (error?.response?.status === 400 && detail) {
+        alert(detail)
+      }
       console.error("Ошибка массового подтверждения:", error)
     }
   }
@@ -131,16 +154,28 @@ export default function ParentReviewPage() {
   ) => {
     if (!taskId || !date) return
 
+    const cached = queryClient.getQueryData<WeeklyReviewItem[]>([
+      "weekly-review",
+      selectedChildId,
+      weekStartIso,
+    ])
+    const currentItem = cached?.find((it) => it.taskId === taskId)
+    if (currentItem?.weekClosed) {
+      console.warn("[review] week is closed, ignoring status change")
+      return
+    }
+
     const updateCache = (oldData: any) => {
       if (!oldData) return oldData
       return oldData.map((item: WeeklyReviewItem) => {
         if (item.taskId !== taskId) return item
+        if (item.weekClosed) return item
 
         const existingLogIndex = item.logs.findIndex((l) => l.date === date)
-        let updatedLogs = [...item.logs]
-        let pricePerRun =
+        const updatedLogs = [...item.logs]
+        const pricePerRun =
           Number(item.weeklyPrice) / (item.targetCount || item.targetDays?.length || 1)
-        let oldStatus = existingLogIndex >= 0 ? item.logs[existingLogIndex].status : "NONE"
+        const oldStatus = existingLogIndex >= 0 ? item.logs[existingLogIndex].status : "NONE"
 
         const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
 
@@ -166,7 +201,7 @@ export default function ParentReviewPage() {
       })
     }
 
-    queryClient.setQueryData(["weekly-review", selectedChildId], updateCache)
+    queryClient.setQueryData(["weekly-review", selectedChildId, weekStartIso], updateCache)
 
     if (activeTaskView && activeTaskView.taskId === taskId) {
       setActiveTaskView((prev) => (prev ? updateCache([prev])[0] : prev))
@@ -193,6 +228,8 @@ export default function ParentReviewPage() {
   })
 
   if (activeTaskView) {
+    const weekClosed = !!activeTaskView.weekClosed
+
     const startDate = new Date(`${activeTaskView.weekStart || "2025-10-20"}T12:00:00`)
     const weekDates = Array.from({ length: 7 }, (_, index) => {
       const date = new Date(startDate)
@@ -219,22 +256,16 @@ export default function ParentReviewPage() {
             {activeTaskView.title}
           </button>
 
-          <Badge variant="secondary" className="bg-amber-100 text-xs text-amber-800">
-            Проверка
+          <Badge
+            variant="secondary"
+            className={cn(
+              "text-xs",
+              weekClosed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800",
+            )}
+          >
+            {weekClosed ? "Неделя закрыта" : "Проверка"}
           </Badge>
         </div>
-
-        {/* ─── ВРЕМЕННЫЙ ДАМП activeTaskView ─────────────────────── */}
-        {DEBUG_RAW && (
-          <details className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs">
-            <summary className="cursor-pointer font-semibold text-rose-800">
-              [DEBUG] activeTaskView JSON
-            </summary>
-            <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all">
-              {JSON.stringify(activeTaskView, null, 2)}
-            </pre>
-          </details>
-        )}
 
         <Card className="border-slate-200 bg-white shadow-xs">
           <CardContent className="flex flex-col gap-4 p-4">
@@ -248,7 +279,6 @@ export default function ParentReviewPage() {
                 <span className="text-sm font-semibold text-slate-900">
                   {activeTaskView.child.name}
                 </span>
-
                 <span className="text-xs text-slate-500">{weekLabel}</span>
               </div>
             </div>
@@ -304,6 +334,12 @@ export default function ParentReviewPage() {
             </div>
           </CardContent>
         </Card>
+
+        {weekClosed && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-[11px] text-emerald-800">
+            Неделя закрыта и выплачена. Изменять отметки нельзя.
+          </div>
+        )}
 
         <div className="flex flex-col gap-3">
           <span className="px-1 text-xs font-semibold text-slate-700">Выполнения за неделю</span>
@@ -405,7 +441,7 @@ export default function ParentReviewPage() {
                     </div>
                   )}
 
-                  {isPending && (
+                  {isPending && !weekClosed && (
                     <div className="flex gap-2 pt-1">
                       <Button
                         variant="secondary"
@@ -433,7 +469,7 @@ export default function ParentReviewPage() {
                     </div>
                   )}
 
-                  {isCancelled && (
+                  {isCancelled && !weekClosed && (
                     <Button
                       variant="outline"
                       className="mt-1 h-10 w-full cursor-pointer border-emerald-200 text-emerald-700 hover:bg-emerald-50"
@@ -465,6 +501,14 @@ export default function ParentReviewPage() {
         <h1 className="text-xl font-bold tracking-tight text-slate-900">Проверка заданий</h1>
       </div>
 
+      <WeekNavigator
+        weekStart={weekStartIso}
+        weekEnd={weekEndIso}
+        onPrev={handlePrev}
+        onNext={handleNext}
+        disableNext={nextDisabled}
+      />
+
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           type="button"
@@ -495,52 +539,6 @@ export default function ParentReviewPage() {
           </button>
         ))}
       </div>
-
-      {/* ─── ВРЕМЕННЫЙ ДАМП reviewsData НА СТРАНИЦЕ ─────────────── */}
-      {DEBUG_RAW && (
-        <details open className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs">
-          <summary className="cursor-pointer font-semibold text-rose-800">
-            [DEBUG] weekly-review: {Array.isArray(reviewsData) ? reviewsData.length : 0} item(s) ·
-            queryKey=["weekly-review","{selectedChildId}"] · loading={String(reviewsLoading)}
-          </summary>
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200"
-              onClick={() => {
-                navigator.clipboard.writeText(JSON.stringify(reviewsData, null, 2))
-              }}
-            >
-              Скопировать JSON
-            </button>
-            <button
-              type="button"
-              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200"
-              onClick={() => {
-                const cached = queryClient.getQueryData(["weekly-review", selectedChildId])
-                console.log("[cached]", cached)
-                alert("См. console.log → [cached]")
-              }}
-            >
-              Кэш в консоль
-            </button>
-            <button
-              type="button"
-              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-rose-700 ring-1 ring-rose-200"
-              onClick={() => {
-                queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
-              }}
-            >
-              Инвалидировать
-            </button>
-          </div>
-
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-tight">
-            {JSON.stringify(reviewsData, null, 2)}
-          </pre>
-        </details>
-      )}
 
       {loading ? (
         <div className="py-12 text-center text-sm text-slate-500">Загрузка заданий...</div>

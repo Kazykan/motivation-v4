@@ -4,8 +4,32 @@ from decimal import Decimal
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
-from motivation.models import TaskLog, TaskLogHistory
+from motivation.models import TaskLog, TaskLogHistory, WeeklyReport
+
+
+def _week_start(d):
+    return d - timezone.timedelta(days=d.weekday())
+
+
+def is_week_closed(task, log_date) -> bool:
+    """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
+    start = _week_start(log_date)
+    return WeeklyReport.objects.filter(
+        child_id=task.child_id,
+        start_date=start,
+        status=WeeklyReport.Status.CLOSED,
+    ).exists()
+
+
+def assert_week_open(task, log_date):
+    """Бросает ValidationError, если неделя закрыта."""
+
+    if is_week_closed(task, log_date):
+        raise ValidationError(
+            "Неделя закрыта. Изменять выполнения за закрытую неделю нельзя."
+        )
 
 
 def recalculate_task_logs_earnings(task, week_start, week_end):
@@ -66,6 +90,8 @@ def change_task_log_status(log_id, new_status, user):
     if log.status == new_status:
         return log
 
+    assert_week_open(log.task, log.date)
+
     old_status = log.status
 
     is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
@@ -86,7 +112,7 @@ def change_task_log_status(log_id, new_status, user):
 
     update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
 
-    if new_status == TaskLog.Status.CANCELLED:
+    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
         log.earned_amount = Decimal("0.00")
         update_fields.append("earned_amount")
 

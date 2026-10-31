@@ -60,3 +60,8 @@ serverApi.interceptors.request.use((config) => {
   }
   return config
 })
+
+export function getTgInitData(): string | null {
+  if (typeof window === "undefined") return null
+  return (window as any).Telegram?.WebApp?.initData || null
+}

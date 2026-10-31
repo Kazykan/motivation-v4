@@ -112,6 +112,7 @@ export interface WeeklyReviewItem {
   targetDays?: number[] | string[]
   weekStart: string
   weekEnd: string
+  weekClosed: boolean
   child: WeeklyReviewChild
   summary: WeeklyReviewSummary
   logs: WeeklyReviewTaskLog[]
@@ -127,4 +128,54 @@ export interface TaskLogHistoryItem {
   new_status: string
   changed_by_name: string
   changed_at: string
+}
+
+export interface WeeklyForecastItem {
+  taskId: number
+  title: string
+  scheduleType: "FLEXIBLE" | "FIXED"
+  weeklyPrice: string
+  plannedRuns: number
+  approvedCount: number
+  pendingCount: number
+  earned: string
+  pendingAmount: string
+  remaining: string
+  targetDays: number[]
+}
+
+export interface WeeklyForecast {
+  weekStart: string
+  weekEnd: string
+  childId: number
+  items: WeeklyForecastItem[]
+  summary: {
+    planned: string
+    earned: string
+    pendingAmount: string
+    forecast: string
+    remaining: string
+  }
+}
+
+export interface MyWeeklyReport {
+  current: WeeklyForecast
+  previous: WeeklyForecast | null
+}
+
+export interface WeeklyReportDraft {
+  id: number | null
+  child: number
+  start_date: string
+  end_date: string
+  status: "DRAFT" | "REVIEW" | "CLOSED"
+  calculated_amount: string
+  manual_adjustment: string
+  comment: string
+  total_paid: string
+  is_payout_confirmed: boolean
+  payout_date: string | null
+  final_sum: string
+  is_draft: boolean
+  can_close: boolean
 }

@@ -14,6 +14,7 @@ interface LogStatusEditorProps {
   logId: number
   date: string
   status: LogStatus
+  weekClosed?: boolean
   onChangeStatus: (logId: number, status: LogStatus) => Promise<void>
   onClose: () => void
 }
@@ -52,14 +53,17 @@ export function LogStatusEditor({
   logId,
   date,
   status,
+  weekClosed = false,
   onChangeStatus,
   onClose,
 }: LogStatusEditorProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const disabled = saving || weekClosed
+
   const handleStatusChange = async (nextStatus: LogStatus) => {
-    if (nextStatus === status || saving) return
+    if (nextStatus === status || disabled) return
 
     setSaving(true)
     setError(null)
@@ -102,7 +106,13 @@ export function LogStatusEditor({
         </Button>
       </div>
 
-      {status === "CANCELLED" && (
+      {weekClosed && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-800">
+          Неделя закрыта и выплачена. Изменять отметки нельзя.
+        </div>
+      )}
+
+      {status === "CANCELLED" && !weekClosed && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
           Отметка удалена. Выберите новый статус, чтобы восстановить запись. История изменений
           сохранена.
@@ -118,7 +128,7 @@ export function LogStatusEditor({
             <button
               key={option.value}
               type="button"
-              disabled={saving}
+              disabled={disabled}
               onClick={() => handleStatusChange(option.value)}
               aria-pressed={isActive}
               className={cn(
@@ -156,7 +166,7 @@ export function LogStatusEditor({
           type="button"
           variant="outline"
           className="w-full border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-          disabled={saving || status === "CANCELLED"}
+          disabled={disabled || status === "CANCELLED"}
           onClick={() => handleStatusChange("CANCELLED")}
         >
           <Trash2 className="mr-2 h-4 w-4" />

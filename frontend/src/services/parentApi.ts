@@ -65,11 +65,11 @@ export const parentApi = {
     return res.data
   },
 
-  async getWeeklyReports(childId?: number) {
-    const res = await api.get(
-      "/api/parent/reports",
-      childId ? { params: { child_id: childId } } : undefined,
-    )
+  async getWeeklyReports(childId?: number, weekStart?: string) {
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/api/parent/reports", { params })
     return res.data
   },
 
@@ -90,6 +90,16 @@ export const parentApi = {
 
   async getTaskLogHistory(logId: number) {
     const res = await api.get(`/api/task-logs/${logId}/history`)
+    return res.data
+  },
+  async closeWeek(payload: {
+    child_id: number
+    week_start: string
+    is_payout_confirmed: boolean
+    manual_adjustment?: number
+    comment?: string
+  }) {
+    const res = await api.post("/api/tasks/close-week", payload)
     return res.data
   },
 }

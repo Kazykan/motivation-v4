@@ -8,6 +8,35 @@ import { Navigation } from "@/components/Navigation"
 import Script from "next/script"
 
 const inter = Inter({ subsets: ["cyrillic", "latin"] })
+type AuthState =
+  | { kind: "loading" }
+  | { kind: "no-tg" } // открыто вне Telegram
+  | { kind: "onboarding" } // Telegram есть, но роли нет
+  | { kind: "ready"; user: Me } // всё ок
+  | { kind: "error"; message: string }
+
+useEffect(() => {
+  let cancelled = false
+  async function boot() {
+    const tg = (window as any).Telegram?.WebApp
+    if (!tg) { setState({ kind: "no-tg" }); return }
+    tg.ready(); tg.expand()
+
+    const initData = tg.initData
+    if (!initData) { setState({ kind: "no-tg" }); return }
+
+    try {
+      const me = await authApi.me()
+      if (!me.onboarded) setState({ kind: "onboarding" })
+      else setState({ kind: "ready", user: me })
+    } catch {
+      // 401 — значит initData невалидна / бот не настроен
+      setState({ kind: "error", message: "..." })
+    }
+  }
+  boot()
+  return () => { cancelled = true }
+}, [])
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())

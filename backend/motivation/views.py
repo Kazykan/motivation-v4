@@ -3,10 +3,14 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 from django.db.models import QuerySet, Prefetch
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from motivation.models import (
     User,
@@ -15,6 +19,9 @@ from motivation.models import (
     Task,
     TaskLog,
     WeeklyReport,
+    FamilyGroup,
+    FamilyMembership,
+    FamilyInviteCode,
 )
 from motivation.services.task_logs import change_task_log_status
 from .serializers import (
@@ -25,6 +32,7 @@ from .serializers import (
     TaskLogSerializer,
     WeeklyReportSerializer,
     TaskLogHistorySerializer,
+    FamilyJoinSerializer,
 )
 
 
@@ -42,6 +50,69 @@ class ServiceOrUserPermission(permissions.BasePermission):
         if getattr(request, "auth", None) == "bff-service":
             return True
         return False
+
+
+def _user_payload(user: User) -> dict:
+    membership = user.family_memberships.select_related("family").first()
+    return {
+        "id": user.id,
+        "telegram_id": user.telegram_id,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": user.role,
+        "onboarded": bool(user.role) and membership is not None,
+        "family_id": membership.family_id if membership else None,
+    }
+
+
+class MeView(APIView):
+    def get(self, request):
+        return Response(_user_payload(request.user))
+
+
+class RegisterParentView(APIView):
+    @transaction.atomic
+    def post(self, request):
+        user = request.user
+
+        if user.role or user.family_memberships.exists():
+            return Response(
+                {"detail": "Онбординг уже завершён."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        family = FamilyGroup.objects.create(
+            name=f"Семья {user.first_name or user.username}".strip()
+        )
+        FamilyMembership.objects.create(family=family, user=user, is_owner=True)
+        user.role = User.Role.PARENT
+        user.save(update_fields=["role"])
+        return Response(_user_payload(user), status=status.HTTP_201_CREATED)
+
+
+class JoinByCodeView(APIView):
+    @transaction.atomic
+    def post(self, request):
+        user = request.user
+
+        if user.role or user.family_memberships.exists():
+            return Response(
+                {"detail": "Онбординг уже завершён."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = FamilyJoinSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        invite: FamilyInviteCode = serializer.validated_data["code"]
+        FamilyMembership.objects.create(family=invite.family, user=user, is_owner=False)
+        invite.is_used = True
+        invite.save(update_fields=["is_used"])
+        user.role = User.Role.CHILD
+        user.save(update_fields=["role"])
+        return Response(_user_payload(user), status=status.HTTP_200_OK)
 
 
 def _is_bff(request) -> bool:
@@ -253,6 +324,12 @@ class TaskViewSet(viewsets.ModelViewSet):
                     )
                 )
 
+            week_closed = WeeklyReport.objects.filter(
+                child_id=child_id,
+                start_date=start_date,
+                status=WeeklyReport.Status.CLOSED,
+            ).exists()
+
             result.append(
                 {
                     "taskId": task.id,
@@ -264,6 +341,7 @@ class TaskViewSet(viewsets.ModelViewSet):
                     "targetDays": task.target_days,
                     "weekStart": start_date.isoformat(),
                     "weekEnd": end_date.isoformat(),
+                    "weekClosed": week_closed,
                     "child": {
                         "id": child_obj.id if child_obj else None,
                         "name": child_name,
@@ -281,6 +359,117 @@ class TaskViewSet(viewsets.ModelViewSet):
             )
 
         return Response(result, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get"], url_path="my-weekly-report")
+    def my_weekly_report(self, request):
+        if not _is_authenticated(request) or not getattr(
+            request.user, "is_child", False
+        ):
+            return Response(
+                {"detail": "Доступно только ребёнку."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from motivation.services.weekly_reports import week_bounds, build_week_forecast
+
+        today = date.today()
+        current_start, _ = week_bounds(today)
+
+        # последняя незакрытая неделя до текущей
+        open_report = (
+            WeeklyReport.objects.filter(
+                child=request.user,
+                start_date__lt=current_start,
+            )
+            .exclude(status=WeeklyReport.Status.CLOSED)
+            .order_by("-start_date")
+            .first()
+        )
+        previous_week = None
+        if open_report:
+            previous_week = build_week_forecast(request.user.id, open_report.start_date)
+
+        current_week = build_week_forecast(request.user.id, current_start)
+        return Response(
+            {"current": current_week, "previous": previous_week},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="close-week")
+    def close_week_action(self, request):
+        if not _is_authenticated(request) or not getattr(
+            request.user, "is_parent", False
+        ):
+            return Response({"detail": "Доступно только родителю."}, status=403)
+
+        child_id = request.data.get("child_id")
+        week_start = request.data.get("week_start")
+        if not child_id or not week_start:
+            return Response(
+                {"detail": "child_id и week_start обязательны."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from motivation.services.weekly_reports import close_week
+
+        try:
+            report = close_week(
+                child_id, date.fromisoformat(week_start), request.user, request.data
+            )
+        except ValueError:
+            return Response({"detail": "week_start в формате YYYY-MM-DD."}, status=400)
+        except DjangoValidationError as e:
+            return Response(
+                {"detail": e.messages[0] if e.messages else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(WeeklyReportSerializer(report).data, status=200)
+
+    @action(detail=False, methods=["get"], url_path="reports-overview")
+    def reports_overview(self, request):
+        """Список отчётов по всем детям семьи (или одного ребёнка)."""
+        from motivation.services.weekly_reports import (
+            build_report_drafts,
+            week_start_of,
+        )
+
+        if not (_is_bff(request) or _is_authenticated(request)):
+            return Response({"detail": "Нет доступа."}, status=403)
+
+        child_id_param = request.query_params.get("child_id")
+        week_start_param = request.query_params.get("week_start")
+
+        if week_start_param:
+            try:
+                week_start = date.fromisoformat(week_start_param)
+            except ValueError:
+                return Response(
+                    {"detail": "week_start в формате YYYY-MM-DD."},
+                    status=400,
+                )
+        else:
+            week_start = week_start_of(date.today())
+
+        if child_id_param:
+            child_ids = [int(child_id_param)]
+        else:
+            if _is_bff(request) or not _is_authenticated(request):
+                from motivation.models import User
+
+                child_ids = list(
+                    User.objects.filter(role=User.Role.CHILD).values_list(
+                        "id", flat=True
+                    )
+                )
+            else:
+                user = request.user
+                if getattr(user, "is_child", False):
+                    child_ids = [user.id]
+                else:
+                    child_ids = list(_family_child_ids(user))
+
+        return Response(build_report_drafts(child_ids, week_start), status=200)
 
 
 class TaskLogViewSet(viewsets.ModelViewSet):
@@ -313,16 +502,23 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        from motivation.services.task_logs import assert_week_open
+
         task = serializer.validated_data["task"]
+        log_date = serializer.validated_data["date"]
         user = self.request.user
 
         if _is_authenticated(self.request):
             if getattr(user, "is_child", False) and task.child != user:
                 raise permissions.PermissionDenied("Нельзя отмечать чужие задания.")
 
-        initial_status = serializer.validated_data.get("status", TaskLog.Status.PENDING)
+        try:
+            assert_week_open(task, log_date)
+        except DjangoValidationError as e:
+            raise DRFValidationError({"detail": e.messages[0]})
 
-        # Сохраняем как PENDING, чтобы change_task_log_status зафиксировал переход в истории
+        initial_status = serializer.validated_data.get("status", TaskLog.Status.PENDING)
         serializer.validated_data["status"] = TaskLog.Status.PENDING
         log = serializer.save(earned_amount=Decimal("0.00"))
 
@@ -355,22 +551,27 @@ class TaskLogViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Родитель может подтверждать только логи детей своей семьи.
         qs = TaskLog.objects.filter(id__in=log_ids, status=TaskLog.Status.DONE_BY_CHILD)
         if _is_authenticated(request) and getattr(request.user, "is_parent", False):
             child_ids = _family_child_ids(request.user)
             qs = qs.filter(task__child_id__in=child_ids)
 
         logs = list(qs)
-        updated_count = 0
+        approved_ids = []
+        skipped_closed = []
+
         for log in logs:
-            change_task_log_status(log.id, TaskLog.Status.APPROVED, request.user)
-            updated_count += 1
+            try:
+                change_task_log_status(log.id, TaskLog.Status.APPROVED, request.user)
+                approved_ids.append(log.id)
+            except DjangoValidationError:
+                skipped_closed.append(log.id)
 
         return Response(
             {
-                "detail": f"Успешно подтверждено логов: {updated_count}.",
-                "approved_ids": [log.id for log in logs],
+                "detail": f"Успешно подтверждено логов: {len(approved_ids)}.",
+                "approved_ids": approved_ids,
+                "skipped_closed": skipped_closed,
             },
             status=status.HTTP_200_OK,
         )

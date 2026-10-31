@@ -53,6 +53,8 @@ export function ParentReviewCard({
 
   const buffer = useLogSyncStore((state) => state.buffer)
 
+  const weekClosed = !!item.weekClosed
+
   const formatDate = (date: Date) => {
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -93,9 +95,6 @@ export function ParentReviewCard({
   const pendingCount = pendingLogs.length
   const currentPendingLog = pendingLogs[0] ?? null
 
-  // ── Логи, дата которых вне целевых дней (только для FIXED) ──
-  // CANCELLED исключаем: пользователь уже "погасил" отметку,
-  // она не должна висеть как конфликт.
   const outOfScheduleLogs = isFlexible
     ? []
     : taskLogs.filter((log) => {
@@ -125,11 +124,15 @@ export function ParentReviewCard({
             <p className="text-xs text-muted-foreground">Ребёнок · {item.child.age} лет</p>
           </div>
 
-          {pendingCount > 0 && (
+          {weekClosed ? (
+            <Badge className="shrink-0 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+              Неделя закрыта
+            </Badge>
+          ) : pendingCount > 0 ? (
             <Badge className="shrink-0 bg-amber-100 text-amber-800 hover:bg-amber-100">
               {pendingCount} на проверке
             </Badge>
-          )}
+          ) : null}
         </div>
 
         <Separator />
@@ -173,10 +176,8 @@ export function ParentReviewCard({
               const isCancelled = status === "CANCELLED"
 
               const hasLog = !!log
-              // "вне расписания" — только для живых логов, CANCELLED уже погашен
               const isOutOfSchedule = !isFlexible && hasLog && !isScheduled && !isCancelled
-              // кликабельно, если день в расписании / гибкое / есть любой лог
-              // (в т.ч. CANCELLED — чтобы восстановить)
+              // при закрытой неделе оставляем клик только для просмотра (редактор заблокирован)
               const isClickable = isFlexible || isScheduled || hasLog
 
               let statusLabel = "—"
@@ -203,19 +204,19 @@ export function ParentReviewCard({
                     }
                   }}
                   className={cn(
-                    "flex min-w-0 flex-col items-center gap-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary relative",
-                    !isClickable && "opacity-40 cursor-not-allowed",
+                    "relative flex min-w-0 flex-col items-center gap-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    !isClickable && "cursor-not-allowed opacity-40",
                   )}
                 >
                   {isPendingSync && (
-                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-10">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                    <span className="absolute -right-1 -top-1 z-10 flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
                     </span>
                   )}
 
                   {isOutOfSchedule && (
-                    <span className="absolute -top-1 -left-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-white">
+                    <span className="absolute -left-1 -top-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-white">
                       <AlertTriangle className="h-2 w-2" />
                     </span>
                   )}
@@ -311,7 +312,7 @@ export function ParentReviewCard({
 
         {selectedCell && (
           <div className="space-y-2">
-            {selectedCell.isOutOfSchedule && (
+            {selectedCell.isOutOfSchedule && !weekClosed && (
               <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-800">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
@@ -325,6 +326,7 @@ export function ParentReviewCard({
               logId={selectedCell.logId ?? 0}
               date={selectedCell.date}
               status={selectedCell.status}
+              weekClosed={weekClosed}
               onChangeStatus={handleStatusChange}
               onClose={() => setSelectedCell(null)}
             />
@@ -347,7 +349,7 @@ export function ParentReviewCard({
           </div>
         </div>
 
-        {currentPendingLog && (
+        {currentPendingLog && !weekClosed && (
           <div className="space-y-2">
             <Button
               className="h-11 w-full rounded-xl bg-amber-400 font-semibold text-slate-900 hover:bg-amber-500"

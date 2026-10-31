@@ -77,13 +77,13 @@ class TelegramInitDataAuthentication(authentication.BaseAuthentication):
         if not tg_user:
             raise exceptions.AuthenticationFailed("В initData нет user.")
 
-        user, _ = User.objects.get_or_create(
+        user, created = User.objects.get_or_create(
             telegram_id=tg_user.id,
             defaults={
                 "username": f"tg_{tg_user.id}",
                 "first_name": tg_user.first_name or "",
                 "last_name": tg_user.last_name or "",
-                "role": User.Role.CHILD,
+                "role": "",  # пустая роль = не онборджен
             },
         )
         return (user, None)

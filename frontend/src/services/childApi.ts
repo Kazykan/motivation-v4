@@ -27,4 +27,8 @@ export const childApi = {
     const res = await api.get("/api/parent/reports") // ❌ нужен child-роут
     return res.data
   },
+  async getMyWeeklyReport() {
+    const res = await api.get("/api/tasks/my-weekly-report")
+    return res.data
+  },
 }

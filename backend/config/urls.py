@@ -14,4 +14,5 @@ urlpatterns = [
     ),
     # API приложения мотивации
     path("api/v1/", include("motivation.urls")),
+    path("api/v1/auth/", include("motivation.auth_urls")),
 ]

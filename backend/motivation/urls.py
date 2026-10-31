@@ -8,6 +8,7 @@ from .views import (
     WeeklyReportViewSet,
 )
 
+
 router = DefaultRouter()
 router.register(r"users", UserViewSet, basename="user")
 router.register(r"invites", FamilyInviteCodeViewSet, basename="invite")

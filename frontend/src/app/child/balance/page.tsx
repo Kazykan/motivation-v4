@@ -1,4 +1,3 @@
-// src/app/child/balance/page.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -6,41 +5,64 @@ import { childApi } from "@/services/childApi"
 import { Card, CardContent } from "@/components/ui/card"
 import { Wallet } from "lucide-react"
 import { TaskLogCard } from "@/components/TaskLogCard"
+import { MyWeeklyReport } from "@/types/props"
+import { WeeklyForecastCard } from "@/components/WeeklyForecastCard"
+import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
+import { WeekNavigator } from "@/components/WeekNavigator"
 
 export default function ChildBalancePage() {
   const [reports, setReports] = useState<any[]>([])
   const [taskLogs, setTaskLogs] = useState<any[]>([])
   const [loading, setLoading] = useState<boolean>(true)
+  const [weekOffset, setWeekOffset] = useState<number>(0) // 0 = текущая, -1 = прошлая
+  const [data, setData] = useState<MyWeeklyReport | null>(null)
 
-  const fetchData = async () => {
-    try {
-      const [reportsData, logsData] = await Promise.all([
-        childApi.getMyReports(),
-        childApi.getMyTaskLogs(),
-      ])
-      setReports(reportsData)
-      setTaskLogs(logsData)
-    } catch (error) {
-      console.error("Ошибка загрузки данных баланса:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const weekStart = addWeeks(getMonday(new Date()), weekOffset)
+  const weekStartIso = toISODate(weekStart)
+  const weekEndIso = toISODate(getWeekEnd(weekStart))
 
   useEffect(() => {
+    childApi
+      .getMyWeeklyReport()
+      .then(setData)
+      .catch((e) => console.error("Ошибка отчёта:", e))
+  }, [])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [reportsData, logsData] = await Promise.all([
+          childApi.getMyReports(),
+          childApi.getMyTaskLogs(),
+        ])
+        setReports(reportsData)
+        setTaskLogs(logsData)
+      } catch (error) {
+        console.error("Ошибка загрузки данных баланса:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
     fetchData()
   }, [])
 
-  const currentReport = reports[0] || {
-    total_earned: 0,
-    bonus: 0,
-    penalty: 0,
-  }
+  const currentReport = reports[0] || { total_earned: 0, bonus: 0, penalty: 0 }
 
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <h1 className="text-xl font-bold tracking-tight text-slate-900">Баланс и заработок</h1>
+
+        <WeekNavigator
+          weekStart={weekStartIso}
+          weekEnd={weekEndIso}
+          onPrev={() => setWeekOffset((v) => v - 1)}
+          onNext={() => {
+            if (weekOffset < 0) setWeekOffset((v) => v + 1)
+          }}
+          disableNext={weekOffset >= 0}
+        />
+
         <Card className="border-slate-200 bg-slate-900 text-white shadow-lg">
           <CardContent className="flex flex-col gap-4 p-5">
             <div className="flex items-center justify-between">
@@ -79,6 +101,10 @@ export default function ChildBalancePage() {
             {taskLogs.map((log: any) => (
               <TaskLogCard key={log.id} log={log} />
             ))}
+            {data?.current && <WeeklyForecastCard forecast={data.current} title="Текущая неделя" />}
+            {data?.previous && (
+              <WeeklyForecastCard forecast={data.previous} title="Предыдущая неделя (не закрыта)" />
+            )}
           </div>
         )}
       </section>
