@@ -55,8 +55,14 @@ class FamilyInviteCodeCreateSerializer(serializers.ModelSerializer):
                 "Пользователь не состоит ни в одной семье."
             )
 
+        FamilyInviteCode.objects.filter(
+            family=membership.family,
+            is_used=False,
+        ).update(is_used=True)
+
         invite = FamilyInviteCode.objects.create(
-            family=membership.family, created_by=user
+            family=membership.family,
+            created_by=user,
         )
         return invite
 

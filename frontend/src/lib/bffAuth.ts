@@ -1,5 +1,4 @@
-// frontend/src/lib/bffAuth.ts
-import { NextRequest } from "next/server"
+import { readSessionCookie } from "./session"
 
 export function extractInitData(request: Request): string | null {
   const auth = request.headers.get("Authorization")
@@ -9,11 +8,14 @@ export function extractInitData(request: Request): string | null {
   return value
 }
 
-export function buildDjangoHeaders(request: Request): Record<string, string> {
-  const initData = extractInitData(request)
+export async function buildDjangoHeaders(request: Request): Promise<Record<string, string>> {
   const headers: Record<string, string> = {}
-  if (initData) {
-    headers["X-Telegram-Init-Data"] = initData
+  const initData = extractInitData(request)
+  if (initData) headers["X-Telegram-Init-Data"] = initData
+
+  const session = await readSessionCookie() // ← await внутри
+  if (session?.django_user_id) {
+    headers["X-BFF-User-Id"] = String(session.django_user_id)
   }
   return headers
 }

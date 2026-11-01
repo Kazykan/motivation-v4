@@ -51,6 +51,9 @@ class User(AbstractUser):
     apple_id = models.CharField(
         max_length=255, unique=True, null=True, blank=True, verbose_name="Apple User ID"
     )
+    vk_id = models.CharField(
+        max_length=255, unique=True, null=True, blank=True, verbose_name="VK ID"
+    )
 
     avatar_url = models.URLField(max_length=500, blank=True, null=True)
 

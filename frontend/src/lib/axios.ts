@@ -30,8 +30,8 @@ api.interceptors.request.use((config) => {
 // (server-only файлы).
 
 function buildBasicAuth(): string {
-  const user = process.env.DJANGO_SUPERUSER_USERNAME ?? ""
-  const pass = process.env.DJANGO_SUPERUSER_PASSWORD ?? ""
+  const user = process.env.BFF_SERVICE_USERNAME ?? ""
+  const pass = process.env.BFF_SERVICE_PASSWORD ?? ""
   if (!user || !pass) {
     // Не бросаем ошибку на этапе импорта — иначе весь build упадёт.
     // Лучше явно ругнуться при первом запросе.

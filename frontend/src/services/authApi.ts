@@ -1,16 +1,29 @@
 import { api } from "@/lib/axios"
 
+export type UserRole = "PARENT" | "CHILD"
+
+export interface MeResponse {
+  id: number
+  telegram_id: number | null
+  first_name: string
+  last_name: string
+  role: UserRole | ""
+  onboarded: boolean
+  family_id: number | null
+  invite_code?: string
+}
+
 export const authApi = {
-  async me() {
+  async me(): Promise<MeResponse> {
     const res = await api.get("/api/auth/me")
     return res.data
   },
-  async registerParent() {
-    const res = await api.post("/api/auth/register-parent")
+  async registerParent(): Promise<MeResponse> {
+    const res = await api.post("/api/auth/me/register-parent")
     return res.data
   },
-  async joinFamily(code: string) {
-    const res = await api.post("/api/auth/join-family", { code })
+  async joinFamily(code: string, role: UserRole): Promise<MeResponse> {
+    const res = await api.post("/api/auth/me/join-family", { code, role })
     return res.data
   },
 }

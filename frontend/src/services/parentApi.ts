@@ -102,4 +102,23 @@ export const parentApi = {
     const res = await api.post("/api/tasks/close-week", payload)
     return res.data
   },
+  async getCurrentInvite() {
+    const res = await api.get("/api/invites")
+    return res.data as {
+      id: number
+      code: string
+      expires_at: string
+      is_used: boolean
+    }
+  },
+
+  async createInvite() {
+    const res = await api.post("/api/invites")
+    return res.data as {
+      id: number
+      code: string
+      expires_at: string
+      is_used: boolean
+    }
+  },
 }

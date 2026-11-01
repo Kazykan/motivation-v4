@@ -16,9 +16,10 @@ class BFFServiceAuthentication(authentication.BaseAuthentication):
     """
     Basic-auth для доверенного сервиса (Next.js BFF).
 
-    Заголовок Authorization: Basic base64(login:password).
-    Возвращает (None, None) — это не пользователь, а пропуск доступа.
-    Реальный пользователь приходит через X-Telegram-Init-Data.
+    После проверки Basic-кредов:
+    - если пришёл X-BFF-User-Id — аутентифицируем этого пользователя;
+    - иначе возвращаем (None, "bff-service") — пропуск для сервисных вызовов
+      (например, эндпоинт /auth/oauth/, где пользователь ещё не определён).
     """
 
     def authenticate(self, request):
@@ -39,13 +40,34 @@ class BFFServiceAuthentication(authentication.BaseAuthentication):
         except Exception:
             raise exceptions.AuthenticationFailed("Некорректный Basic-заголовок.")
 
-        ok_user = hmac.compare_digest(username, expected_user)
-        ok_pass = hmac.compare_digest(password, expected_pass)
-        if not (ok_user and ok_pass):
+        if not (
+            hmac.compare_digest(username, expected_user)
+            and hmac.compare_digest(password, expected_pass)
+        ):
             raise exceptions.AuthenticationFailed("Неверные сервисные креды.")
 
-        # Пропускаем дальше. request.user = AnonymousUser,
-        # но permission-класс ниже разрешит запрос.
+        # OAuth-сессия BFF: поднимаем реального пользователя.
+        bff_user_id = request.META.get("HTTP_X_BFF_USER_ID")
+
+        # ── ВРЕМЕННО, ТОЛЬКО ДЛЯ РАЗРАБОТКИ ──
+        import logging
+
+        logging.getLogger("motivation.auth").warning(
+            "BFF ok: path=%s, X-BFF-User-Id=%r, cookie=%r",
+            request.path,
+            bff_user_id,
+            request.META.get("HTTP_COOKIE", "")[:200],
+        )
+        # ─────────────────────────────────────
+
+        if bff_user_id:
+            try:
+                user = User.objects.get(id=int(bff_user_id))
+                return (user, "bff-service")
+            except (User.DoesNotExist, ValueError):
+                raise exceptions.AuthenticationFailed("Пользователь BFF не найден.")
+
+        # Без пользователя — только сервисный пропуск.
         return (None, "bff-service")
 
 

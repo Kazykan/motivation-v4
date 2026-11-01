@@ -8,35 +8,6 @@ import { Navigation } from "@/components/Navigation"
 import Script from "next/script"
 
 const inter = Inter({ subsets: ["cyrillic", "latin"] })
-type AuthState =
-  | { kind: "loading" }
-  | { kind: "no-tg" } // открыто вне Telegram
-  | { kind: "onboarding" } // Telegram есть, но роли нет
-  | { kind: "ready"; user: Me } // всё ок
-  | { kind: "error"; message: string }
-
-useEffect(() => {
-  let cancelled = false
-  async function boot() {
-    const tg = (window as any).Telegram?.WebApp
-    if (!tg) { setState({ kind: "no-tg" }); return }
-    tg.ready(); tg.expand()
-
-    const initData = tg.initData
-    if (!initData) { setState({ kind: "no-tg" }); return }
-
-    try {
-      const me = await authApi.me()
-      if (!me.onboarded) setState({ kind: "onboarding" })
-      else setState({ kind: "ready", user: me })
-    } catch {
-      // 401 — значит initData невалидна / бот не настроен
-      setState({ kind: "error", message: "..." })
-    }
-  }
-  boot()
-  return () => { cancelled = true }
-}, [])
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
@@ -52,18 +23,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       if (tg) {
         tg.ready()
         tg.expand()
-        // Диагностика в консоль Telegram-клиента (Safari/Chrome)
         console.log("[TG] initData length:", tg.initData?.length ?? 0)
         console.log("[TG] initDataUnsafe:", tg.initDataUnsafe)
         setTgReady(true)
       } else if (attempts++ < 50) {
-        // до 5 сек ждём появления Telegram SDK
         setTimeout(tryInit, 100)
       } else {
         console.warn("[TG] SDK не загрузился — открыто вне Telegram?")
-        setTgReady(true) // рендерим всё равно
+        setTgReady(true)
       }
     }
+
     tryInit()
     return () => {
       cancelled = true
@@ -73,7 +43,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ru" className="h-full antialiased" suppressHydrationWarning>
       <head>
-        {/* beforeInteractive = инжектится в initial HTML, доступен до гидратации */}
         <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
       </head>
       <body

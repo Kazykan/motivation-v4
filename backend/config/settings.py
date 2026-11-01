@@ -164,3 +164,10 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
     "x-parent-telegram-id",
     "x-child-telegram-id",
 ]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {"motivation.auth": {"handlers": ["console"], "level": "DEBUG"}},
+}

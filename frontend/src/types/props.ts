@@ -144,6 +144,14 @@ export interface WeeklyForecastItem {
   targetDays: number[]
 }
 
+export interface InviteCodeDialogProps {
+  open: boolean
+  code: string
+  expiresAt?: string
+  onOpenChange: (open: boolean) => void
+  onGenerateNew?: () => Promise<void> | void
+}
+
 export interface WeeklyForecast {
   weekStart: string
   weekEnd: string
@@ -178,4 +186,34 @@ export interface WeeklyReportDraft {
   final_sum: string
   is_draft: boolean
   can_close: boolean
+}
+
+// ── Onboarding ──────────────────────────────────────────────
+export type OnboardingStep = "role" | "parent" | "child"
+
+export interface OnboardingFlowProps {
+  onDone: () => void
+}
+
+export interface RoleStepProps {
+  onSelectParent: () => void
+  onSelectChild: () => void
+}
+
+export interface ParentStepProps {
+  onBack: () => void
+  onCreated: (inviteCode: string) => void
+  onJoined: () => void
+}
+
+export interface ChildStepProps {
+  onBack: () => void
+  onJoined: () => void
+}
+
+export interface InviteCodeDialogProps {
+  open: boolean
+  code: string
+  onOpenChange: (open: boolean) => void
+  onGenerateNew?: () => Promise<string> | string
 }
