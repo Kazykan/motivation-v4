@@ -5,7 +5,7 @@ import { buildDjangoHeaders } from "@/lib/bffAuth"
 export async function GET(request: Request) {
   try {
     const res = await serverApi.get("/api/v1/invites/current/", {
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json(res.data)
   } catch (error: any) {
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const res = await serverApi.post(
       "/api/v1/invites/",
       {},
-      { headers: buildDjangoHeaders(request) },
+      { headers: await buildDjangoHeaders(request) },
     )
     return NextResponse.json(res.data)
   } catch (error: any) {

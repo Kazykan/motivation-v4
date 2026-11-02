@@ -145,8 +145,8 @@ class TaskSerializer(serializers.ModelSerializer):
 class TaskLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskLog
-        fields = ("id", "task", "date", "status", "earned_amount", "updated_by_parent")
-        read_only_fields = ("id", "earned_amount", "updated_by_parent")
+        fields = ...
+        read_only_fields = ("id", "earned_amount", "updated_by_parent", "status")
 
 
 class WeeklyReportSerializer(serializers.ModelSerializer):

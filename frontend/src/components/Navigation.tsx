@@ -38,26 +38,6 @@ export function Navigation() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md">
-      <div className="flex justify-center border-b border-slate-100 py-1 bg-amber-100/50 text-[10px]">
-        <span className="mr-2 self-center font-medium text-slate-600">Режим тестирования:</span>
-        <Button
-          variant={role === "PARENT" ? "default" : "ghost"}
-          size="sm"
-          className="h-5 rounded-full px-2 text-[10px]"
-          onClick={() => setRole("PARENT")}
-        >
-          Родитель
-        </Button>
-        <Button
-          variant={role === "CHILD" ? "default" : "ghost"}
-          size="sm"
-          className="h-5 rounded-full px-2 text-[10px]"
-          onClick={() => setRole("CHILD")}
-        >
-          Ребенок
-        </Button>
-      </div>
-
       <nav className="mx-auto flex max-w-md items-center justify-around py-2 relative">
         {/* Индикатор синхронизации на панели навигации */}
         {isSyncing && (

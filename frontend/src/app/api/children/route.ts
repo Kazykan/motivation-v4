@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   try {
     const res = await serverApi.get("/api/v1/users/", {
       params: { is_child: true },
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json(res.data)
   } catch (error: any) {

@@ -8,7 +8,7 @@ export async function POST(request: Request) {
       "/api/v1/auth/register-parent/",
       {},
       {
-        headers: buildDjangoHeaders(request),
+        headers: await buildDjangoHeaders(request),
       },
     )
     return NextResponse.json(res.data)

@@ -49,17 +49,6 @@ class BFFServiceAuthentication(authentication.BaseAuthentication):
         # OAuth-сессия BFF: поднимаем реального пользователя.
         bff_user_id = request.META.get("HTTP_X_BFF_USER_ID")
 
-        # ── ВРЕМЕННО, ТОЛЬКО ДЛЯ РАЗРАБОТКИ ──
-        import logging
-
-        logging.getLogger("motivation.auth").warning(
-            "BFF ok: path=%s, X-BFF-User-Id=%r, cookie=%r",
-            request.path,
-            bff_user_id,
-            request.META.get("HTTP_COOKIE", "")[:200],
-        )
-        # ─────────────────────────────────────
-
         if bff_user_id:
             try:
                 user = User.objects.get(id=int(bff_user_id))

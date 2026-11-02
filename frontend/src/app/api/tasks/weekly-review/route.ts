@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
 
 export async function GET(request: Request) {
   try {
@@ -7,10 +8,7 @@ export async function GET(request: Request) {
     const childId = searchParams.get("child_id")
     const weekStart = searchParams.get("week_start")
 
-    const headers: Record<string, string> = {}
-
-    const authHeader = request.headers.get("Authorization")
-    if (authHeader) headers["Authorization"] = authHeader
+    const headers = await buildDjangoHeaders(request)
 
     const params: Record<string, any> = {}
     if (childId) params.child_id = childId

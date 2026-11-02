@@ -1,12 +1,16 @@
 # backend/motivation/views.py
 from datetime import date, timedelta
 from decimal import Decimal
+from typing_extensions import Literal, cast
 
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import QuerySet, Prefetch
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import (
+    PermissionDenied,
+    ValidationError as DjangoValidationError,
+)
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -42,8 +46,20 @@ PROVIDER_FIELDS = {
 }
 
 
+class OnboardedUserPermission(permissions.BasePermission):
+    """Пропускает только пользователей с завершённым онбордингом (роль задана)."""
+
+    def has_permission(self, request, view):
+            if getattr(request, "auth", None) == "bff-service":
+                return True
+            user = getattr(request, "user", None)
+            return cast(Literal[True], bool(user and user.is_authenticated and user.role))
+
+
 class OAuthLoginView(APIView):
     """Принимает доверенный вызов от BFF. Не требует пользовательской аутентификации."""
+
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         provider = request.data.get("provider")
@@ -114,6 +130,8 @@ def _user_payload(user: User, invite_code: str | None = None) -> dict:
 
 
 class MeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request):
         return Response(_user_payload(request.user))
 
@@ -301,7 +319,7 @@ class FamilyInviteCodeViewSet(viewsets.ModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
-    permission_classes = [ServiceOrUserPermission]
+    permission_classes = [ServiceOrUserPermission, OnboardedUserPermission]
 
     def get_queryset(self):
         request = self.request
@@ -618,9 +636,18 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         log_date = serializer.validated_data["date"]
         user = self.request.user
 
+        # Авторизация по роли:
         if _is_authenticated(self.request):
-            if getattr(user, "is_child", False) and task.child != user:
-                raise permissions.PermissionDenied("Нельзя отмечать чужие задания.")
+            if getattr(user, "is_child", False):
+                if task.child != user:
+                    raise PermissionDenied("Нельзя отмечать чужие задания.")
+            elif getattr(user, "is_parent", False):
+                if not FamilyMembership.objects.filter(
+                    user=user, family__memberships__user=task.child
+                ).exists():
+                    raise PermissionDenied("Ребёнок не из вашей семьи.")
+            else:
+                raise PermissionDenied("Роль не задана.")
 
         try:
             assert_week_open(task, log_date)

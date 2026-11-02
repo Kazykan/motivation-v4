@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
     const res = await serverApi.get("/api/v1/tasks/reports-overview/", {
       params,
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json(res.data)
   } catch (error: any) {
@@ -34,13 +34,13 @@ export async function POST(request: Request) {
     // Иначе — старое поведение: прямое создание WeeklyReport.
     if (body?.child_id && body?.week_start) {
       const res = await serverApi.post("/api/v1/tasks/close-week/", body, {
-        headers: buildDjangoHeaders(request),
+        headers: await buildDjangoHeaders(request),
       })
       return NextResponse.json(res.data)
     }
 
     const res = await serverApi.post("/api/v1/weekly-reports/", body, {
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json(res.data)
   } catch (error: any) {

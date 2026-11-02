@@ -7,7 +7,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     const { id } = await context.params
     const body = await request.json()
     const res = await serverApi.put(`/api/v1/tasks/${id}/`, body, {
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json(res.data)
   } catch (error: any) {
@@ -22,7 +22,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   try {
     const { id } = await context.params
     await serverApi.delete(`/api/v1/tasks/${id}/`, {
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json({ success: true })
   } catch (error: any) {

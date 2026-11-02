@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { parentApi } from "@/services/parentApi"
 import { useChildren } from "@/hooks/useChildren"
@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation"
 import { WeekNavigator } from "@/components/WeekNavigator"
 import { getMonday, addWeeks, toISODate, getWeekEnd, isWeekCloseable } from "@/lib/week"
 import type { WeeklyReportDraft } from "@/types/props"
+import { useRequireRole } from "@/hooks/useRequireRole"
 
 export default function ParentReportsPage() {
   const router = useRouter()
@@ -23,11 +24,12 @@ export default function ParentReportsPage() {
 
   const weekStartIso = toISODate(weekStart)
   const weekEndIso = toISODate(getWeekEnd(weekStart))
+  const { ready } = useRequireRole("PARENT")
 
   const { data: reports = [], isLoading: reportsLoading } = useQuery<WeeklyReportDraft[]>({
     queryKey: ["weekly-reports", selectedChildId, weekStartIso],
     queryFn: () => parentApi.getWeeklyReports(selectedChildId || undefined, weekStartIso),
-    enabled: !childrenLoading,
+    enabled: ready && !childrenLoading,
   })
 
   const closeWeekMutation = useMutation({
@@ -70,6 +72,10 @@ export default function ParentReportsPage() {
     params.set("child_id", String(childId))
     params.set("week_start", weekStartIso)
     router.push(`/parent/review?${params.toString()}`)
+  }
+
+  if (!ready) {
+    return <div className="py-12 text-center text-sm text-slate-500">Загрузка...</div>
   }
 
   return (

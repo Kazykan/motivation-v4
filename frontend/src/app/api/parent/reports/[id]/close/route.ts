@@ -8,7 +8,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const body = await request.json()
 
     const res = await serverApi.patch(`/api/v1/weekly-reports/${id}/`, body, {
-      headers: buildDjangoHeaders(request),
+      headers: await buildDjangoHeaders(request),
     })
     return NextResponse.json(res.data)
   } catch (error: any) {

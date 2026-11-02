@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
-
+import { buildDjangoHeaders } from "@/lib/bffAuth"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const headers: Record<string, string> = {}
-
-    const authHeader = request.headers.get("Authorization")
-    if (authHeader) headers["Authorization"] = authHeader
-
+    const headers = await buildDjangoHeaders(request)
     const res = await serverApi.post("/api/v1/task-logs/bulk-approve/", body, { headers })
     return NextResponse.json(res.data)
   } catch (error: any) {

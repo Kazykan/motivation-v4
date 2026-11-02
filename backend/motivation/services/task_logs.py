@@ -4,9 +4,9 @@ from decimal import Decimal
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.utils import timezone
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 
-from motivation.models import TaskLog, TaskLogHistory, WeeklyReport
+from motivation.models import TaskLog, TaskLogHistory, User, WeeklyReport
 
 
 def _week_start(d):
@@ -84,6 +84,17 @@ def change_task_log_status(log_id, new_status, user):
     """
     log = TaskLog.objects.select_for_update().get(id=log_id)
 
+    if user and user.is_authenticated:
+        is_child = getattr(user, "role", None) == User.Role.CHILD
+        is_parent = getattr(user, "role", None) == User.Role.PARENT
+        if is_child and log.task.child.pk != user.id:
+            raise PermissionDenied(...)
+        if is_child and new_status in (TaskLog.Status.APPROVED, TaskLog.Status.REJECTED):
+            raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
+        if not is_child and not is_parent:
+            raise PermissionDenied("Роль не задана.")
+    
+
     if new_status not in TaskLog.Status.values:
         raise ValueError("Недопустимый статус выполнения.")
 
@@ -119,7 +130,7 @@ def change_task_log_status(log_id, new_status, user):
     log.save(update_fields=update_fields)
 
     # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
-    if log.task_id:
+    if log.task.pk:
         start_date = log.date - timezone.timedelta(days=log.date.weekday())
         end_date = start_date + timezone.timedelta(days=6)
         recalculate_task_logs_earnings(log.task, start_date, end_date)

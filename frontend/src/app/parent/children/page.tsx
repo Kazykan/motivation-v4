@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react"
 import { parentApi } from "@/services/parentApi"
 import { Button } from "@/components/ui/button"
+import { authApi } from "@/services/authApi"
 import { Plus } from "lucide-react"
+import { useRequireRole } from "@/hooks/useRequireRole"
 import { ChildCard } from "@/components/ChildCard"
 import { InviteCodeDialog } from "@/components/auth/InviteCodeDialog"
 
@@ -19,6 +21,16 @@ export default function ParentChildrenPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [invite, setInvite] = useState<Invite | null>(null)
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
+  const { ready } = useRequireRole("PARENT")
+
+  useEffect(() => {
+    if (!ready) return
+    fetchChildren()
+  }, [ready])
+
+  if (!ready) {
+    return <div className="py-12 text-center text-sm text-slate-500">Загрузка...</div>
+  }
 
   const fetchChildren = async () => {
     try {
@@ -70,13 +82,9 @@ export default function ParentChildrenPage() {
 
       <div className="flex flex-col gap-3">
         {loading ? (
-          <div className="py-8 text-center text-sm text-slate-500">
-            Загрузка списка детей...
-          </div>
+          <div className="py-8 text-center text-sm text-slate-500">Загрузка списка детей...</div>
         ) : children.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-500">
-            Список детей пуст
-          </div>
+          <div className="py-8 text-center text-sm text-slate-500">Список детей пуст</div>
         ) : (
           <div className="flex flex-col gap-3">
             {children.map((child: any) => (
@@ -95,4 +103,5 @@ export default function ParentChildrenPage() {
       />
     </div>
   )
-}86
+}
+86

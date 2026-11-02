@@ -109,7 +109,7 @@ export interface WeeklyReviewItem {
   weeklyPrice: string | number
   scheduleType: "FIXED" | "FLEXIBLE"
   targetCount: number
-  targetDays?: number[] | string[]
+  targetDays?: number[]
   weekStart: string
   weekEnd: string
   weekClosed: boolean
