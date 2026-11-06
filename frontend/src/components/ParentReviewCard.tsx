@@ -1,4 +1,3 @@
-// frontend/src/components/ParentReviewCard.tsx
 "use client"
 
 import { useState } from "react"
@@ -18,11 +17,11 @@ import {
   AlertTriangle,
   Trash2,
 } from "lucide-react"
-import { WeeklyReviewItem } from "@/types/props"
-import { LogStatusEditor, LogStatus } from "@/components/LogStatusEditor"
+import { LogStatusValue, WeeklyReviewItem } from "@/types/props"
+import { LogStatusEditor } from "@/components/LogStatusEditor"
 import { useLogSyncStore } from "@/store/useLogSyncStore"
-
-const WEEK_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+import { WEEK_DAYS_SHORT, formatDateISO } from "@/lib/dates"
+import { formatMoney } from "@/lib/money"
 
 interface ParentReviewCardProps {
   item: WeeklyReviewItem
@@ -31,7 +30,7 @@ interface ParentReviewCardProps {
   onOpenDetail: (item: WeeklyReviewItem) => void
   onChangeLogStatus: (
     logId: number | null,
-    status: LogStatus,
+    status: LogStatusValue,
     taskId?: number,
     date?: string,
   ) => Promise<void>
@@ -47,43 +46,26 @@ export function ParentReviewCard({
   const [selectedCell, setSelectedCell] = useState<{
     logId: number | null
     date: string
-    status: LogStatus
+    status: LogStatusValue
     isOutOfSchedule: boolean
   } | null>(null)
 
   const buffer = useLogSyncStore((state) => state.buffer)
-
   const weekClosed = !!item.weekClosed
 
-  const formatDate = (date: Date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-    const day = String(date.getDate()).padStart(2, "0")
-    return `${year}-${month}-${day}`
-  }
-
-  const formatMoney = (amount: string | number) =>
-    new Intl.NumberFormat("ru-RU", {
-      maximumFractionDigits: 2,
-    }).format(Number(amount)) + " ₽"
-
   const startDate = new Date(`${item.weekStart || "2025-10-20"}T12:00:00`)
-
   const weekDates = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(startDate)
     date.setDate(date.getDate() + index)
     return date
   })
-
   const weekEnd = weekDates[6]
-
   const weekLabel = `${weekDates[0].getDate()}–${weekEnd.getDate()} ${weekEnd.toLocaleDateString(
     "ru-RU",
     { month: "long" },
   )}`
 
   const taskLogs = Array.isArray(item.logs) ? item.logs : []
-
   const pendingLogs = taskLogs.filter((log) => log.status === "DONE")
   const approvedLogs = taskLogs.filter((log) => log.status === "APPROVED")
 
@@ -106,30 +88,30 @@ export function ParentReviewCard({
 
   const hasOutOfScheduleWarning = outOfScheduleLogs.length > 0
 
-  const handleStatusChange = async (logId: number | null, status: LogStatus) => {
+  const handleStatusChange = async (logId: number | null, status: LogStatusValue) => {
     await onChangeLogStatus(logId, status, item.taskId, selectedCell?.date)
   }
 
   return (
-    <Card className="overflow-hidden rounded-2xl border-border/60 bg-card shadow-sm">
+    <Card className="overflow-hidden rounded-2xl border-brand-muted/20 bg-card shadow-sm">
       <CardContent className="space-y-4 p-4">
         <div className="flex items-center gap-3">
-          <Avatar className="h-11 w-11 border border-border/60">
+          <Avatar className="h-11 w-11 border border-brand-muted/20">
             <AvatarImage src={item.child.avatar} />
             <AvatarFallback>{(item.child.name || "Р").slice(0, 1)}</AvatarFallback>
           </Avatar>
 
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-foreground">{item.child.name}</p>
-            <p className="text-xs text-muted-foreground">Ребёнок · {item.child.age} лет</p>
+            <p className="font-semibold text-brand-dark">{item.child.name}</p>
+            <p className="text-xs text-brand-muted">Ребёнок · {item.child.age} лет</p>
           </div>
 
           {weekClosed ? (
-            <Badge className="shrink-0 bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+            <Badge className="shrink-0 bg-brand-success-soft text-brand-success-strong hover:bg-brand-success-soft">
               Неделя закрыта
             </Badge>
           ) : pendingCount > 0 ? (
-            <Badge className="shrink-0 bg-amber-100 text-amber-800 hover:bg-amber-100">
+            <Badge className="shrink-0 bg-brand-warning-soft text-brand-warning-strong hover:bg-brand-warning-soft">
               {pendingCount} на проверке
             </Badge>
           ) : null}
@@ -138,17 +120,17 @@ export function ParentReviewCard({
         <Separator />
 
         <div className="space-y-2">
-          <h3 className="text-base font-bold text-foreground">{item.title}</h3>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <h3 className="text-base font-bold text-brand-dark">{item.title}</h3>
+          <div className="flex items-center gap-1.5 text-xs text-brand-muted">
             <CalendarDays className="h-3.5 w-3.5 shrink-0" />
             <span>{weekLabel}</span>
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl bg-muted/40 p-3">
+        <div className="space-y-3 rounded-xl bg-brand-surface p-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">Выполнение за неделю</span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-sm font-semibold text-brand-dark">Выполнение за неделю</span>
+            <span className="text-xs text-brand-muted">
               {isFlexible
                 ? `${approvedCount} из ${targetCount} выполнено`
                 : `${approvedCount} из ${scheduledDays.length} подтверждено`}
@@ -157,7 +139,7 @@ export function ParentReviewCard({
 
           <div className="grid grid-cols-7 gap-1.5">
             {weekDates.map((date, index) => {
-              const formattedDate = formatDate(date)
+              const formattedDate = formatDateISO(date)
               const log = taskLogs.find((l) => l.date === formattedDate)
 
               const bufferKeyLog = log ? `log_${log.id}` : null
@@ -177,7 +159,6 @@ export function ParentReviewCard({
 
               const hasLog = !!log
               const isOutOfSchedule = !isFlexible && hasLog && !isScheduled && !isCancelled
-              // при закрытой неделе оставляем клик только для просмотра (редактор заблокирован)
               const isClickable = isFlexible || isScheduled || hasLog
 
               let statusLabel = "—"
@@ -198,55 +179,57 @@ export function ParentReviewCard({
                       setSelectedCell({
                         logId: log ? log.id : null,
                         date: formattedDate,
-                        status: status === "NONE" ? "DONE" : (status as LogStatus),
+                        status: status === "NONE" ? "DONE" : (status as LogStatusValue),
                         isOutOfSchedule,
                       })
                     }
                   }}
                   className={cn(
-                    "relative flex min-w-0 flex-col items-center gap-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    "relative flex min-w-0 flex-col items-center gap-1.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
                     !isClickable && "cursor-not-allowed opacity-40",
                   )}
                 >
                   {isPendingSync && (
                     <span className="absolute -right-1 -top-1 z-10 flex h-2.5 w-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-primary opacity-75"></span>
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-primary-hover"></span>
                     </span>
                   )}
 
                   {isOutOfSchedule && (
-                    <span className="absolute -left-1 -top-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-white">
+                    <span className="absolute -left-1 -top-1 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-error text-white">
                       <AlertTriangle className="h-2 w-2" />
                     </span>
                   )}
 
-                  <span className="text-[11px] font-medium text-muted-foreground">
-                    {WEEK_DAYS[index]}
+                  <span className="text-[11px] font-medium text-brand-muted">
+                    {WEEK_DAYS_SHORT[index]}
                   </span>
 
                   <div
                     className={cn(
                       "flex aspect-square w-full items-center justify-center rounded-lg border text-sm font-semibold transition-colors",
                       isOutOfSchedule &&
-                        "border-rose-200 bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+                        "border-brand-error/30 bg-brand-error-soft text-brand-error-strong ring-1 ring-brand-error/30",
                       !isOutOfSchedule &&
                         isApproved &&
-                        "border-emerald-200 bg-emerald-100 text-emerald-700",
+                        "border-brand-success/30 bg-brand-success-soft text-brand-success-strong",
                       !isOutOfSchedule &&
                         isPending &&
-                        "border-amber-200 bg-amber-100 text-amber-800",
-                      !isOutOfSchedule && isRejected && "border-red-200 bg-red-100 text-red-700",
+                        "border-brand-warning/40 bg-brand-warning-soft text-brand-warning-strong",
+                      !isOutOfSchedule &&
+                        isRejected &&
+                        "border-brand-error/30 bg-brand-error-soft text-brand-error-strong",
                       !isOutOfSchedule &&
                         isCancelled &&
-                        "border-slate-200 bg-slate-100 text-slate-400",
+                        "border-brand-muted/20 bg-brand-surface-alt text-brand-muted",
                       !log &&
                         isClickable &&
                         status === "NONE" &&
-                        "border-border bg-background text-foreground hover:bg-muted",
-                      !isClickable && "border-transparent bg-transparent text-muted-foreground/40",
+                        "border-brand-muted/20 bg-background text-brand-dark hover:bg-brand-surface-alt",
+                      !isClickable && "border-transparent bg-transparent text-brand-muted/40",
                       selectedCell?.date === formattedDate &&
-                        "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                        "ring-2 ring-brand-primary ring-offset-2 ring-offset-background",
                     )}
                   >
                     {isApproved ? (
@@ -265,12 +248,12 @@ export function ParentReviewCard({
                   <span
                     className={cn(
                       "text-[9px] font-medium leading-none",
-                      isOutOfSchedule && "text-rose-700",
-                      !isOutOfSchedule && isApproved && "text-emerald-700",
-                      !isOutOfSchedule && isPending && "text-amber-700",
-                      !isOutOfSchedule && isRejected && "text-red-700",
-                      !isOutOfSchedule && isCancelled && "text-slate-400",
-                      status === "NONE" && isClickable && "text-muted-foreground",
+                      isOutOfSchedule && "text-brand-error-strong",
+                      !isOutOfSchedule && isApproved && "text-brand-success-strong",
+                      !isOutOfSchedule && isPending && "text-brand-warning-strong",
+                      !isOutOfSchedule && isRejected && "text-brand-error-strong",
+                      !isOutOfSchedule && isCancelled && "text-brand-muted",
+                      status === "NONE" && isClickable && "text-brand-muted",
                       !isClickable && "text-transparent",
                     )}
                   >
@@ -282,19 +265,19 @@ export function ParentReviewCard({
           </div>
 
           {hasOutOfScheduleWarning && (
-            <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-800">
+            <div className="flex items-start gap-2 rounded-lg border border-brand-error/30 bg-brand-error-soft p-2.5 text-[11px] text-brand-error-strong">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <div className="flex flex-col gap-1">
                 <span className="font-semibold">
                   {outOfScheduleLogs.length}{" "}
                   {outOfScheduleLogs.length === 1 ? "выполнение" : "выполнений"} вне расписания
                 </span>
-                <span className="text-rose-700">
+                <span>
                   На эти даты есть логи, но дни убраны из расписания задания. Нажмите на день, чтобы
                   изменить статус, «удалить» отметку (история сохранится) или верните день в
                   настройках задания.
                 </span>
-                <span className="text-rose-700">
+                <span>
                   Даты:{" "}
                   {outOfScheduleLogs
                     .map((l) =>
@@ -313,7 +296,7 @@ export function ParentReviewCard({
         {selectedCell && (
           <div className="space-y-2">
             {selectedCell.isOutOfSchedule && !weekClosed && (
-              <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-800">
+              <div className="flex items-start gap-2 rounded-lg border border-brand-error/30 bg-brand-error-soft p-2.5 text-[11px] text-brand-error-strong">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
                   Этот день вне расписания задания. Чтобы оплата за него учитывалась корректно,
@@ -335,15 +318,15 @@ export function ParentReviewCard({
 
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Начислено</p>
-            <p className="text-lg font-bold tabular-nums text-foreground">
+            <p className="text-xs text-brand-muted">Начислено</p>
+            <p className="text-lg font-bold tabular-nums text-brand-dark">
               {formatMoney(item.summary.calculatedAmount ?? 0)}
             </p>
           </div>
 
           <div className="space-y-1 text-right">
-            <p className="text-xs text-muted-foreground">Максимум за неделю</p>
-            <p className="text-lg font-bold tabular-nums text-foreground">
+            <p className="text-xs text-brand-muted">Максимум за неделю</p>
+            <p className="text-lg font-bold tabular-nums text-brand-dark">
               {formatMoney(item.weeklyPrice)}
             </p>
           </div>
@@ -352,7 +335,7 @@ export function ParentReviewCard({
         {currentPendingLog && !weekClosed && (
           <div className="space-y-2">
             <Button
-              className="h-11 w-full rounded-xl bg-amber-400 font-semibold text-slate-900 hover:bg-amber-500"
+              className="h-11 w-full rounded-xl bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
               onClick={() => onApproveLog(currentPendingLog.id)}
             >
               <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -367,7 +350,7 @@ export function ParentReviewCard({
         <button
           type="button"
           onClick={() => onOpenDetail(item)}
-          className="flex w-full items-center justify-between rounded-lg pt-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="flex w-full items-center justify-between rounded-lg pt-1 text-sm font-medium text-brand-muted transition-colors hover:text-brand-dark"
         >
           Открыть подробности недели
           <ChevronRight className="h-4 w-4" />

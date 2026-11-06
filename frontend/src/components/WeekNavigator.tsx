@@ -31,7 +31,7 @@ export function WeekNavigator({
   disableNext = false,
 }: WeekNavigatorProps) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-2 py-1.5">
+    <div className="flex items-center justify-between rounded-xl border border-brand-muted/20 bg-white px-2 py-1.5">
       <Button
         variant="ghost"
         size="icon-sm"
@@ -42,7 +42,7 @@ export function WeekNavigator({
         <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <span className="text-sm font-semibold text-slate-900">{fmtRange(weekStart, weekEnd)}</span>
+      <span className="text-sm font-semibold text-brand-dark">{fmtRange(weekStart, weekEnd)}</span>
 
       <Button
         variant="ghost"

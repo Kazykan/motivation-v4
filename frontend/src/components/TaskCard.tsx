@@ -1,32 +1,30 @@
-// src/app/child/tasks/_components/TaskCard.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Clock, CheckCircle2 } from "lucide-react"
 import { TaskCardProps } from "@/types/props"
 
-
 export function TaskCard({ task, isSubmitting, onComplete }: TaskCardProps) {
   return (
-    <Card className="border-slate-200">
+    <Card className="border-brand-muted/20">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
-          <CardTitle className="text-sm font-semibold text-slate-900">{task.title}</CardTitle>
-          <Badge variant="secondary" className="bg-amber-100 text-amber-800">
+          <CardTitle className="text-sm font-semibold text-brand-dark">{task.title}</CardTitle>
+          <Badge variant="secondary" className="bg-brand-primary-soft text-brand-warning-strong">
             {task.price_per_run} ₽
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 pt-0">
-        <p className="text-xs text-slate-600">{task.description}</p>
-        <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-1 text-[11px] text-slate-500">
+        <p className="text-xs text-brand-muted">{task.description}</p>
+        <div className="flex items-center justify-between border-t border-brand-muted/15 pt-3">
+          <div className="flex items-center gap-1 text-[11px] text-brand-muted">
             <Clock className="h-3.5 w-3.5" />
             <span>{task.schedule_type || "Гибкое"}</span>
           </div>
           <Button
             size="sm"
-            className="h-8 bg-amber-400 text-slate-900 hover:bg-amber-500"
+            className="h-8 bg-brand-primary text-brand-dark hover:bg-brand-primary-hover"
             disabled={isSubmitting}
             onClick={() => onComplete(task.id)}
           >

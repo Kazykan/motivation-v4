@@ -44,15 +44,15 @@ export function ParentStep({ onBack, onCreated, onJoined }: ParentStepProps) {
       <button
         type="button"
         onClick={onBack}
-        className="absolute top-6 left-6 flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900"
+        className="absolute left-6 top-6 flex items-center gap-1 text-xs font-medium text-brand-muted hover:text-brand-dark"
       >
         <ChevronLeft className="h-4 w-4" />
         Назад
       </button>
 
       <div className="flex flex-col gap-2 text-center">
-        <h1 className="text-xl font-bold text-slate-900">Ваша семья</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-xl font-bold text-brand-dark">Ваша семья</h1>
+        <p className="text-sm text-brand-muted">
           Создайте новую семью или присоединитесь к уже созданной
         </p>
       </div>
@@ -61,9 +61,9 @@ export function ParentStep({ onBack, onCreated, onJoined }: ParentStepProps) {
         <Button
           onClick={createFamily}
           disabled={loading}
-          className="h-16 justify-start gap-3 rounded-2xl bg-amber-400 px-4 text-left text-slate-900 hover:bg-amber-500"
+          className="h-16 justify-start gap-3 rounded-2xl bg-brand-primary px-4 text-left text-brand-dark hover:bg-brand-primary-hover"
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/30">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-primary-hover/30">
             <Plus className="h-5 w-5" />
           </div>
           <div className="flex flex-col">
@@ -79,19 +79,19 @@ export function ParentStep({ onBack, onCreated, onJoined }: ParentStepProps) {
             disabled={loading}
             className="h-16 justify-start gap-3 rounded-2xl px-4 text-left"
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
-              <KeyRound className="h-5 w-5 text-slate-600" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-surface-alt">
+              <KeyRound className="h-5 w-5 text-brand-muted" />
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-slate-900">У меня есть код</span>
-              <span className="text-xs text-slate-500">
+              <span className="text-sm font-semibold text-brand-dark">У меня есть код</span>
+              <span className="text-xs text-brand-muted">
                 Код от второго родителя, который уже создал семью
               </span>
             </div>
           </Button>
         ) : (
-          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3">
-            <label className="text-xs font-medium text-slate-600">Код приглашения</label>
+          <div className="flex flex-col gap-2 rounded-2xl border border-brand-muted/20 bg-white p-3">
+            <label className="text-xs font-medium text-brand-muted">Код приглашения</label>
             <Input
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -117,7 +117,7 @@ export function ParentStep({ onBack, onCreated, onJoined }: ParentStepProps) {
               <Button
                 onClick={joinAsParent}
                 disabled={code.length !== 4 || loading}
-                className="flex-1 bg-amber-400 text-slate-900 hover:bg-amber-500"
+                className="flex-1 bg-brand-primary text-brand-dark hover:bg-brand-primary-hover"
               >
                 {loading ? "Проверяем..." : "Войти"}
               </Button>
@@ -126,7 +126,7 @@ export function ParentStep({ onBack, onCreated, onJoined }: ParentStepProps) {
         )}
       </div>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-brand-error">{error}</p>}
     </div>
   )
 }

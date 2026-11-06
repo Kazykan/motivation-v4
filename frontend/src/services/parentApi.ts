@@ -1,6 +1,5 @@
 import { api } from "@/lib/axios"
-
-export type TaskLogStatus = "DONE" | "APPROVED" | "REJECTED" | "CANCELLED"
+import { LogStatusValue } from "@/types/props"
 
 export const parentApi = {
   // Все запросы — строго на BFF-роуты Next.js (/api/...).
@@ -48,7 +47,7 @@ export const parentApi = {
     return res.data
   },
 
-  async createTaskLog(data: { task: number; date: string; status: TaskLogStatus }) {
+  async createTaskLog(data: { task: number; date: string; status: LogStatusValue  }) {
     const res = await api.post("/api/task-logs", data)
     return res.data
   },
@@ -60,7 +59,7 @@ export const parentApi = {
     return res.data
   },
 
-  async updateTaskLogStatus(logId: number, status: TaskLogStatus) {
+  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
     const res = await api.patch(`/api/task-logs/${logId}`, { status })
     return res.data
   },

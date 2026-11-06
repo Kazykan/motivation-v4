@@ -8,10 +8,10 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
+from typing import TYPE_CHECKING
 
 # Набор четко различимых символов (без O/0, I/1, B/8)
 ALLOWED_CHARS = "2345679ACDEFGHJKMNPQRSTUVWXYZ"
-
 
 def generate_short_code():
     """Генерация случайного 4-символьного кода."""
@@ -29,6 +29,7 @@ def get_default_expiration():
 
 
 class User(AbstractUser):
+
     class Role(models.TextChoices):
         PARENT = "PARENT", "Родитель"
         CHILD = "CHILD", "Ребенок"

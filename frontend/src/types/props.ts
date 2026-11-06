@@ -210,10 +210,3 @@ export interface ChildStepProps {
   onBack: () => void
   onJoined: () => void
 }
-
-export interface InviteCodeDialogProps {
-  open: boolean
-  code: string
-  onOpenChange: (open: boolean) => void
-  onGenerateNew?: () => Promise<string> | string
-}

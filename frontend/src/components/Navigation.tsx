@@ -1,4 +1,3 @@
-// frontend/src/components/Navigation.tsx
 "use client"
 
 import { useState } from "react"
@@ -13,12 +12,11 @@ import {
   User as UserIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { useLogSyncStore } from "@/store/useLogSyncStore"
 
 export function Navigation() {
   const pathname = usePathname()
-  const [role, setRole] = useState<"PARENT" | "CHILD">("PARENT")
+  const [role] = useState<"PARENT" | "CHILD">("PARENT")
   const isSyncing = useLogSyncStore((state) => state.isSyncing)
 
   const parentNav = [
@@ -37,12 +35,11 @@ export function Navigation() {
   const currentNav = role === "PARENT" ? parentNav : childNav
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md">
-      <nav className="mx-auto flex max-w-md items-center justify-around py-2 relative">
-        {/* Индикатор синхронизации на панели навигации */}
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-brand-muted/10 bg-white/90 backdrop-blur-lg">
+      <nav className="relative mx-auto flex max-w-md items-center justify-around px-2 py-2">
         {isSyncing && (
-          <div className="absolute top-1.5 right-4 flex items-center gap-1.5 text-[10px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-            <span className="h-2 w-2 animate-ping rounded-full bg-amber-500" />
+          <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-brand-warning bg-brand-warning-soft px-2.5 py-0.5 text-[10px] font-medium text-brand-warning-strong shadow-xs">
+            <span className="h-2 w-2 animate-ping rounded-full bg-brand-warning" />
             Сохранение...
           </div>
         )}
@@ -56,14 +53,16 @@ export function Navigation() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center gap-1 text-xs font-medium transition-colors",
-                isActive ? "text-amber-500" : "text-slate-400 hover:text-slate-600",
+                "flex flex-col items-center gap-1 text-[11px] font-medium transition-all",
+                isActive
+                  ? "text-brand-dark font-semibold"
+                  : "text-brand-muted hover:text-brand-dark",
               )}
             >
               <div
                 className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-xl",
-                  isActive ? "bg-amber-400 text-slate-900" : "bg-transparent",
+                  "flex h-10 w-10 items-center justify-center rounded-2xl transition-all",
+                  isActive ? "bg-brand-dark text-brand-primary shadow-md" : "bg-transparent",
                 )}
               >
                 <Icon className="h-5 w-5" />

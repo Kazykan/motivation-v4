@@ -1,4 +1,3 @@
-// frontend/src/app/parent/review/page.tsx
 "use client"
 
 import { useMemo, useState } from "react"
@@ -7,15 +6,14 @@ import { useChildren } from "@/hooks/useChildren"
 import { useRequireRole } from "@/hooks/useRequireRole"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLogSyncStore } from "@/store/useLogSyncStore"
-import { WeeklyReviewItem } from "@/types/props"
+import { LogStatusValue, WeeklyReviewItem } from "@/types/props"
 import { ParentReviewCard } from "@/components/ParentReviewCard"
-import { LogStatus } from "@/components/LogStatusEditor"
 import { WeekNavigator } from "@/components/WeekNavigator"
 import { ChildFilter } from "@/components/parent/ChildFilter"
 import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
 import { ReviewTaskDetail } from "@/components/parent/ReviewTaskDetail"
-
-const DEBUG_RAW = false
+import { DebugJsonPanel } from "@/components/DebugJsonPanel"
+import { DEBUG_JSON } from "@/lib/debug"
 
 function normalizeDays(days?: number[] | string[]): number[] {
   if (!Array.isArray(days)) return []
@@ -36,7 +34,6 @@ function normalizeDays(days?: number[] | string[]): number[] {
     .filter((d): d is number => d >= 1 && d <= 7)
 }
 
-/** Приводит ответ бэка к безопасному для UI виду */
 function normalizeReview(item: any): WeeklyReviewItem {
   return {
     ...item,
@@ -59,6 +56,7 @@ export default function ParentReviewPage() {
   const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
   const [activeTaskView, setActiveTaskView] = useState<WeeklyReviewItem | null>(null)
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const [rawReview, setRawReview] = useState<unknown>(null)
 
   const weekStartIso = toISODate(weekStart)
   const weekEndIso = toISODate(getWeekEnd(weekStart))
@@ -76,6 +74,7 @@ export default function ParentReviewPage() {
     enabled: ready && !childrenLoading && children.length > 0,
     queryFn: async () => {
       let raw: any[]
+
       if (selectedChildId === "ALL") {
         const results = await Promise.all(
           children.map((child: any) => parentApi.getWeeklyReview(child.id, weekStartIso)),
@@ -86,39 +85,13 @@ export default function ParentReviewPage() {
         raw = Array.isArray(data) ? data : []
       }
 
-      const normalized = raw.map(normalizeReview)
-
-      if (DEBUG_RAW) {
-        console.group(`[weekly-review] child=${selectedChildId} week=${weekStartIso}`)
-        console.log("raw:", raw)
-        if (Array.isArray(normalized)) {
-          console.table(
-            normalized.map((item) => ({
-              taskId: item.taskId,
-              title: item.title,
-              scheduleType: item.scheduleType,
-              weeklyPrice: item.weeklyPrice,
-              targetCount: item.targetCount,
-              targetDays: JSON.stringify(item.targetDays),
-              approved: item.summary.approvedCount,
-              pending: item.summary.pendingCount,
-              rejected: item.summary.rejectedCount,
-              calcAmount: item.summary.calculatedAmount,
-              logsCount: item.logs.length,
-              weekClosed: item.weekClosed,
-            })),
-          )
-        }
-        console.groupEnd()
+      if (DEBUG_JSON) {
+        setRawReview(raw)
       }
 
-      return normalized
+      return raw.map(normalizeReview)
     },
   })
-
-  if (DEBUG_RAW && error) {
-    console.error("[weekly-review] query error:", error)
-  }
 
   const loading = childrenLoading || reviewsLoading
 
@@ -172,7 +145,7 @@ export default function ParentReviewPage() {
 
   const handleChangeLogStatus = async (
     logId: number | null,
-    status: LogStatus,
+    status: LogStatusValue,
     taskId?: number,
     date?: string,
   ) => {
@@ -210,7 +183,7 @@ export default function ParentReviewPage() {
             earned_amount: earnedAmount,
           }
         } else {
-          updatedLogs.push({ id: Date.now(), date, status, earned_amount: earnedAmount })
+          updatedLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
         }
 
         let currentAmount = Number(item.summary.calculatedAmount || 0)
@@ -238,7 +211,7 @@ export default function ParentReviewPage() {
   }
 
   if (!ready) {
-    return <div className="py-12 text-center text-sm text-slate-500">Загрузка...</div>
+    return <div className="py-12 text-center text-sm text-brand-muted">Загрузка...</div>
   }
 
   if (activeTaskView) {
@@ -255,7 +228,7 @@ export default function ParentReviewPage() {
   return (
     <div className="flex flex-col gap-6 pb-20">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-slate-900">Проверка заданий</h1>
+        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Проверка заданий</h1>
       </div>
 
       <WeekNavigator
@@ -272,10 +245,17 @@ export default function ParentReviewPage() {
         onChange={setSelectedChildId}
       />
 
+      {DEBUG_JSON && (
+        <DebugJsonPanel
+          title={`weekly-review · child=${selectedChildId} · week=${weekStartIso}`}
+          data={error ? { error: String(error), raw: rawReview } : rawReview}
+        />
+      )}
+
       {loading ? (
-        <div className="py-12 text-center text-sm text-slate-500">Загрузка заданий...</div>
+        <div className="py-12 text-center text-sm text-brand-muted">Загрузка заданий...</div>
       ) : reviewsData.length === 0 ? (
-        <div className="py-12 text-center text-sm text-slate-500">Нет заданий на проверку</div>
+        <div className="py-12 text-center text-sm text-brand-muted">Нет заданий на проверку</div>
       ) : (
         <div className="flex flex-col gap-4">
           {reviewsData.map((item) => (

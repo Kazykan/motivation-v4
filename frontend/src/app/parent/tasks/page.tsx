@@ -1,4 +1,3 @@
-// src/app/parent/tasks/page.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -70,7 +69,7 @@ export default function ParentTasksPage() {
         <Button
           size="sm"
           onClick={handleCreateNew}
-          className="bg-brand-primary text-brand-dark hover:bg-brand-primary-hover font-semibold cursor-pointer"
+          className="cursor-pointer bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
         >
           <Plus className="mr-1.5 h-4 w-4" />
           Создать
@@ -81,10 +80,10 @@ export default function ParentTasksPage() {
         <button
           onClick={() => setSelectedChildId("ALL")}
           className={cn(
-            "rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+            "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
             selectedChildId === "ALL"
               ? "bg-brand-dark text-white shadow-xs"
-              : "bg-white text-brand-muted border border-slate-200 hover:bg-slate-50",
+              : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt",
           )}
         >
           Все дети ({tasks.length})
@@ -100,10 +99,10 @@ export default function ParentTasksPage() {
               key={child.id}
               onClick={() => setSelectedChildId(childIdStr)}
               className={cn(
-                "rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer",
+                "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
                 selectedChildId === childIdStr
                   ? "bg-brand-dark text-white shadow-xs"
-                  : "bg-white text-brand-muted border border-slate-200 hover:bg-slate-50",
+                  : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt",
               )}
             >
               {child.first_name || child.name || "Ребенок"} ({childTasksCount})

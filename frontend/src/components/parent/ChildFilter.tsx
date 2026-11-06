@@ -17,8 +17,8 @@ export function ChildFilter({ children, selectedChildId, onChange }: ChildFilter
         className={cn(
           "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
           selectedChildId === "ALL"
-            ? "bg-slate-900 text-white shadow-xs"
-            : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+            ? "bg-brand-dark text-white shadow-xs"
+            : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt",
         )}
       >
         Все дети
@@ -32,8 +32,8 @@ export function ChildFilter({ children, selectedChildId, onChange }: ChildFilter
           className={cn(
             "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
             selectedChildId === String(child.id)
-              ? "bg-slate-900 text-white shadow-xs"
-              : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+              ? "bg-brand-dark text-white shadow-xs"
+              : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt",
           )}
         >
           {child.first_name || child.name || "Ребенок"}

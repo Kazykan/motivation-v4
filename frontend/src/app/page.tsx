@@ -32,7 +32,6 @@ export default function Home() {
     } catch (e: any) {
       const status = e?.response?.status
       if (status === 401 || status === 403) {
-        // не аутентифицирован — это нормальное состояние, показываем кнопки логина
         setPhase("no-auth")
       } else {
         setError(e?.response?.data?.error ?? e?.response?.data?.detail ?? "Ошибка авторизации")
@@ -42,22 +41,16 @@ export default function Home() {
   }
 
   useEffect(() => {
-    // BFF-сессия (Google/VK) не видна клиенту — httpOnly cookie.
-    // Пробуем «me» только если есть initData; если cookie есть, но initData нет,
-    // запрос всё равно вернёт 200 за счёт X-BFF-User-Id — но мы не знаем,
-    // есть ли cookie. Поэтому: сначала проверяем initData, а «me» вызываем всегда,
-    // НО трактуем 401/403 как «покажи кнопки логина», а не как ошибку.
     if (hasTelegramInitData()) {
       loadMe()
     } else {
-      // Нет initData — но может быть BFF-cookie. Один запрос, чтобы узнать.
       loadMe()
     }
   }, [])
 
   if (phase === "init" || phase === "loading") {
     return (
-      <div className="flex min-h-[80vh] items-center justify-center text-sm text-slate-500">
+      <div className="flex min-h-[80vh] items-center justify-center text-sm text-brand-muted">
         Загрузка...
       </div>
     )
@@ -67,8 +60,8 @@ export default function Home() {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-6 px-6 text-center">
         <div className="flex flex-col gap-2">
-          <h1 className="text-xl font-bold text-slate-900">Вход в приложение</h1>
-          <p className="max-w-xs text-sm text-slate-500">
+          <h1 className="text-xl font-bold text-brand-dark">Вход в приложение</h1>
+          <p className="max-w-xs text-sm text-brand-muted">
             Выберите способ входа. Если вы открыли приложение в браузере — войдите через Google или
             VK. Если через Telegram-бота — приложение войдёт автоматически.
           </p>
@@ -81,7 +74,7 @@ export default function Home() {
   if (phase === "error") {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-sm text-rose-600">{error}</p>
+        <p className="text-sm text-brand-error">{error}</p>
       </div>
     )
   }

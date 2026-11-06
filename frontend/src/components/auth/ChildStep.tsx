@@ -30,14 +30,14 @@ export function ChildStep({ onBack, onJoined }: ChildStepProps) {
       <button
         type="button"
         onClick={onBack}
-        className="absolute top-6 left-6 flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900"
+        className="absolute left-6 top-6 flex items-center gap-1 text-xs font-medium text-brand-muted hover:text-brand-dark"
       >
         <ChevronLeft className="h-4 w-4" />Я не ребёнок
       </button>
 
       <div className="flex flex-col gap-2 text-center">
-        <h1 className="text-xl font-bold text-slate-900">Код от родителя</h1>
-        <p className="max-w-xs text-sm text-slate-500">
+        <h1 className="text-xl font-bold text-brand-dark">Код от родителя</h1>
+        <p className="max-w-xs text-sm text-brand-muted">
           Попросите родителя открыть раздел «Дети» → «Добавить ребёнка» и продиктовать 4-символьный
           код
         </p>
@@ -55,12 +55,12 @@ export function ChildStep({ onBack, onJoined }: ChildStepProps) {
       <Button
         onClick={join}
         disabled={code.length !== 4 || loading}
-        className="h-12 w-full max-w-xs bg-amber-400 text-slate-900 hover:bg-amber-500"
+        className="h-12 w-full max-w-xs bg-brand-primary text-brand-dark hover:bg-brand-primary-hover"
       >
         {loading ? "Проверяем..." : "Присоединиться"}
       </Button>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-brand-error">{error}</p>}
     </div>
   )
 }

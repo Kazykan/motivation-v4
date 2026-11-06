@@ -1,4 +1,3 @@
-// frontend/src/components/TaskFormSheet.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -101,7 +100,6 @@ export function TaskFormSheet({
     )
   }
 
-  // ── Проверка: не удаляются ли дни, на которые есть активные логи ──
   const checkRemovedDaysHaveLogs = async (): Promise<{
     removedDays: number[]
     activeLogsByDate: Array<{ date: string; status: string; earned_amount: string }>
@@ -125,8 +123,6 @@ export function TaskFormSheet({
       const data = await parentApi.getWeeklyReview(Number(childId))
       reviews = Array.isArray(data) ? data : []
     } catch (e) {
-      // если не удалось получить обзоры — не блокируем сохранение,
-      // просто не показываем предупреждение
       console.warn("Не удалось проверить логи перед изменением расписания:", e)
       return null
     }
@@ -163,7 +159,6 @@ export function TaskFormSheet({
     setError(null)
 
     try {
-      // ── Предупреждение об удалении дней с логами ──
       const removalCheck = await checkRemovedDaysHaveLogs()
       if (removalCheck && removalCheck.activeLogsByDate.length > 0) {
         const daysText = removalCheck.removedDays.map((d) => DAY_LABELS_SHORT[d]).join(", ")
@@ -225,21 +220,21 @@ export function TaskFormSheet({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 w-full max-w-md rounded-t-3xl rounded-b-none p-5 sm:max-w-md bg-[#f7f6f2] border-none shadow-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="text-left pb-1">
-          <DialogTitle className="text-base font-bold text-slate-900">
+      <DialogContent className="fixed bottom-0 top-auto left-1/2 w-full max-w-md -translate-x-1/2 translate-y-0 overflow-y-auto rounded-t-3xl rounded-b-none border-none bg-brand-surface p-5 shadow-2xl sm:max-w-md max-h-[90vh]">
+        <DialogHeader className="pb-1 text-left">
+          <DialogTitle className="text-base font-bold text-brand-dark">
             {taskToEdit ? "Редактировать задание" : "Создать задание"}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-600">Ребенок</label>
+            <label className="text-xs font-medium text-brand-muted">Ребенок</label>
             <select
               value={childId}
               onChange={(e) => setChildId(e.target.value)}
               required
-              className="bg-white border-none shadow-none h-11 rounded-xl text-sm px-3 text-slate-900 outline-none"
+              className="h-11 rounded-xl border-none bg-white px-3 text-sm text-brand-dark shadow-none outline-none"
             >
               <option value="" disabled>
                 Выберите ребенка
@@ -253,28 +248,28 @@ export function TaskFormSheet({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-600">Название задачи</label>
+            <label className="text-xs font-medium text-brand-muted">Название задачи</label>
             <Input
               placeholder="Например, Уборка комнаты"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              className="bg-white border-none shadow-none h-11 rounded-xl text-sm"
+              className="h-11 rounded-xl border-none bg-white text-sm shadow-none"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-600">Описание</label>
+            <label className="text-xs font-medium text-brand-muted">Описание</label>
             <Input
               placeholder="Подробное описание..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="bg-white border-none shadow-none h-11 rounded-xl text-sm"
+              className="h-11 rounded-xl border-none bg-white text-sm shadow-none"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-600">Стоимость за неделю (₽)</label>
+            <label className="text-xs font-medium text-brand-muted">Стоимость за неделю (₽)</label>
             <Input
               type="number"
               step="0.01"
@@ -282,18 +277,20 @@ export function TaskFormSheet({
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               required
-              className="bg-white border-none shadow-none h-11 rounded-xl text-sm"
+              className="h-11 rounded-xl border-none bg-white text-sm shadow-none"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-slate-600">Тип расписания</label>
-            <div className="flex rounded-xl bg-slate-200/70 p-1">
+            <label className="text-xs font-medium text-brand-muted">Тип расписания</label>
+            <div className="flex rounded-xl bg-brand-surface-alt p-1">
               <button
                 type="button"
                 className={cn(
                   "flex-1 rounded-lg py-2 text-xs font-semibold transition-all",
-                  scheduleType === "FIXED" ? "bg-slate-900 text-white shadow-sm" : "text-slate-600",
+                  scheduleType === "FIXED"
+                    ? "bg-brand-dark text-white shadow-sm"
+                    : "text-brand-muted",
                 )}
                 onClick={() => setScheduleType("FIXED")}
               >
@@ -304,8 +301,8 @@ export function TaskFormSheet({
                 className={cn(
                   "flex-1 rounded-lg py-2 text-xs font-semibold transition-all",
                   scheduleType === "FLEXIBLE"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600",
+                    ? "bg-brand-dark text-white shadow-sm"
+                    : "text-brand-muted",
                 )}
                 onClick={() => setScheduleType("FLEXIBLE")}
               >
@@ -316,7 +313,7 @@ export function TaskFormSheet({
 
           {scheduleType === "FIXED" ? (
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-slate-600">Дни недели</label>
+              <label className="text-xs font-medium text-brand-muted">Дни недели</label>
               <div className="flex justify-between gap-1">
                 {DAYS_OF_WEEK.map((day) => {
                   const isSelected = selectedDays.includes(day.id)
@@ -328,8 +325,8 @@ export function TaskFormSheet({
                       className={cn(
                         "flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold transition-all",
                         isSelected
-                          ? "bg-amber-400 text-slate-900 shadow-sm"
-                          : "bg-white text-slate-400 hover:bg-slate-100",
+                          ? "bg-brand-primary text-brand-dark shadow-sm"
+                          : "bg-white text-brand-muted hover:bg-brand-surface-alt",
                       )}
                     >
                       {day.label}
@@ -340,22 +337,22 @@ export function TaskFormSheet({
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-slate-600">Количество выполнений</label>
-              <div className="flex items-center bg-white rounded-xl px-3 h-11 shadow-none">
+              <label className="text-xs font-medium text-brand-muted">Количество выполнений</label>
+              <div className="flex h-11 items-center rounded-xl bg-white px-3 shadow-none">
                 <button
                   type="button"
-                  className="h-8 px-2 text-slate-400 hover:text-slate-900 disabled:opacity-20 text-lg font-medium"
+                  className="h-8 px-2 text-lg font-medium text-brand-muted hover:text-brand-dark disabled:opacity-20"
                   onClick={() => setCount((prev) => Math.max(1, prev - 1))}
                   disabled={count <= 1}
                 >
                   –
                 </button>
-                <div className="flex-1 text-center text-sm font-semibold text-slate-900">
+                <div className="flex-1 text-center text-sm font-semibold text-brand-dark">
                   {count}
                 </div>
                 <button
                   type="button"
-                  className="h-8 px-2 text-slate-400 hover:text-slate-900 disabled:opacity-20 text-lg font-medium"
+                  className="h-8 px-2 text-lg font-medium text-brand-muted hover:text-brand-dark disabled:opacity-20"
                   onClick={() => setCount((prev) => Math.min(7, prev + 1))}
                   disabled={count >= 7}
                 >
@@ -365,18 +362,18 @@ export function TaskFormSheet({
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1 px-1">
-            <label className="text-xs font-medium text-slate-600">Активно</label>
+          <div className="flex items-center justify-between px-1 pt-1">
+            <label className="text-xs font-medium text-brand-muted">Активно</label>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
 
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-brand-error">{error}</p>}
 
           <DialogFooter className="pt-2">
             <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-amber-400 text-slate-900 hover:bg-amber-500 font-semibold h-12 rounded-xl text-base shadow-sm"
+              className="h-12 w-full rounded-xl bg-brand-primary text-base font-semibold text-brand-dark shadow-sm hover:bg-brand-primary-hover"
             >
               {loading ? "Сохранение..." : "Сохранить"}
             </Button>

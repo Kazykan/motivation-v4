@@ -7,18 +7,29 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  
+
   /* Фирменная палитра семейного приложения */
-  --color-brand-primary: #fbbf24;      /* Теплый янтарный (акцентный) */
+  --color-brand-primary: #fbbf24; /* Теплый янтарный (акцентный) */
   --color-brand-primary-hover: #f59e0b; /* Янтарный при наведении */
-  --color-brand-dark: #0f172a;          /* Глубокий темно-синий для текста/шапок */
-  --color-brand-muted: #64748b;         /* Второстепенный текст */
-  --color-brand-surface: #f7f6f2;       /* Фоновый для карточек и модалок */
-  --color-brand-success: #10b981;       /* Зеленый (деньги, подтверждено) */
-  --color-brand-error: #f43f5e;         /* Красный (штрафы, удаление) */
+  --color-brand-primary-soft: #fef3c7; /* Светлый фон акцента */
+  --color-brand-primary-soft-hover: #fde68a;
 
+  --color-brand-dark: #0f172a; /* Глубокий темно-синий для текста/шапок */
+  --color-brand-muted: #64748b; /* Второстепенный текст */
+  --color-brand-surface: #f7f6f2; /* Фоновый для карточек и модалок */
+  --color-brand-surface-alt: #f1f5f9; /* Альтернативный фон */
 
+  --color-brand-success: #10b981; /* Зеленый (деньги, подтверждено) */
+  --color-brand-success-soft: #d1fae5;
+  --color-brand-success-strong: #047857;
 
+  --color-brand-error: #f43f5e; /* Красный (штрафы, удаление) */
+  --color-brand-error-soft: #ffe4e6;
+  --color-brand-error-strong: #be123c;
+
+  --color-brand-warning: #f59e0b; /* Янтарный-акцент для «ожидает» */
+  --color-brand-warning-soft: #fef3c7;
+  --color-brand-warning-strong: #b45309;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -64,6 +75,9 @@
 }
 
 :root {
+  --radius: 1rem;
+  --shadow-soft: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 0 1px 1px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

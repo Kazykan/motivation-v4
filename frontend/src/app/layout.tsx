@@ -23,13 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       if (tg) {
         tg.ready()
         tg.expand()
-        console.log("[TG] initData length:", tg.initData?.length ?? 0)
-        console.log("[TG] initDataUnsafe:", tg.initDataUnsafe)
         setTgReady(true)
       } else if (attempts++ < 50) {
         setTimeout(tryInit, 100)
       } else {
-        console.warn("[TG] SDK не загрузился — открыто вне Telegram?")
         setTgReady(true)
       }
     }
@@ -46,13 +43,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
       </head>
       <body
-        className={`${inter.className} flex min-h-full flex-col bg-amber-50/20 text-slate-900 pb-20`}
+        className={`${inter.className} flex min-h-full flex-col bg-brand-surface text-brand-dark pb-20`}
       >
         <QueryClientProvider client={queryClient}>
           {tgReady ? (
             <main className="mx-auto w-full max-w-md flex-1 px-4 py-6">{children}</main>
           ) : (
-            <div className="flex h-screen items-center justify-center text-sm text-slate-500">
+            <div className="flex h-screen items-center justify-center text-sm text-brand-muted">
               Загрузка Telegram Mini App...
             </div>
           )}

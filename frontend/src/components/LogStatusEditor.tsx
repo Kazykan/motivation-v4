@@ -1,4 +1,3 @@
-// frontend/src/components/LogStatusEditor.tsx
 "use client"
 
 import { useState } from "react"
@@ -7,20 +6,20 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { Check, Clock3, X, Trash2 } from "lucide-react"
 import { LogHistoryViewer } from "@/components/LogHistoryViewer"
-
-export type LogStatus = "DONE" | "APPROVED" | "REJECTED" | "CANCELLED"
+import { LogStatusValue } from "@/types/props"
+import { formatLongDay } from "@/lib/dates"
 
 interface LogStatusEditorProps {
   logId: number
   date: string
-  status: LogStatus
+  status: LogStatusValue
   weekClosed?: boolean
-  onChangeStatus: (logId: number, status: LogStatus) => Promise<void>
+  onChangeStatus: (logId: number, status: LogStatusValue) => Promise<void>
   onClose: () => void
 }
 
 const STATUS_OPTIONS: {
-  value: LogStatus
+  value: LogStatusValue
   label: string
   icon: typeof Clock3
   activeClass: string
@@ -30,22 +29,22 @@ const STATUS_OPTIONS: {
     value: "DONE",
     label: "Ожидает",
     icon: Clock3,
-    activeClass: "border-amber-400 bg-amber-50 text-amber-800",
-    iconClass: "text-amber-600",
+    activeClass: "border-brand-warning bg-brand-warning-soft text-brand-warning-strong",
+    iconClass: "text-brand-warning",
   },
   {
     value: "APPROVED",
     label: "Подтверждено",
     icon: Check,
-    activeClass: "border-emerald-500 bg-emerald-50 text-emerald-800",
-    iconClass: "text-emerald-600",
+    activeClass: "border-brand-success bg-brand-success-soft text-brand-success-strong",
+    iconClass: "text-brand-success",
   },
   {
     value: "REJECTED",
     label: "Отклонено",
     icon: X,
-    activeClass: "border-red-400 bg-red-50 text-red-800",
-    iconClass: "text-red-600",
+    activeClass: "border-brand-error bg-brand-error-soft text-brand-error-strong",
+    iconClass: "text-brand-error",
   },
 ]
 
@@ -62,7 +61,7 @@ export function LogStatusEditor({
 
   const disabled = saving || weekClosed
 
-  const handleStatusChange = async (nextStatus: LogStatus) => {
+  const handleStatusChange = async (nextStatus: LogStatusValue) => {
     if (nextStatus === status || disabled) return
 
     setSaving(true)
@@ -79,18 +78,12 @@ export function LogStatusEditor({
     }
   }
 
-  const formattedDate = new Date(`${date}T12:00:00`).toLocaleDateString("ru-RU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  })
-
   return (
-    <div className="animate-in slide-in-from-bottom-2 space-y-3 rounded-xl border bg-card p-3 shadow-sm duration-200">
+    <div className="animate-in slide-in-from-bottom-2 space-y-3 rounded-xl border border-brand-muted/20 bg-card p-3 shadow-sm duration-200">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold">Статус выполнения</p>
-          <p className="text-xs text-muted-foreground">{formattedDate}</p>
+          <p className="text-sm font-semibold text-brand-dark">Статус выполнения</p>
+          <p className="text-xs text-brand-muted">{formatLongDay(date)}</p>
         </div>
 
         <Button
@@ -107,13 +100,13 @@ export function LogStatusEditor({
       </div>
 
       {weekClosed && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-800">
+        <div className="rounded-lg border border-brand-success bg-brand-success-soft p-2 text-[11px] text-brand-success-strong">
           Неделя закрыта и выплачена. Изменять отметки нельзя.
         </div>
       )}
 
       {status === "CANCELLED" && !weekClosed && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+        <div className="rounded-lg border border-brand-muted/20 bg-brand-surface-alt p-2 text-[11px] text-brand-muted">
           Отметка удалена. Выберите новый статус, чтобы восстановить запись. История изменений
           сохранена.
         </div>
@@ -136,12 +129,10 @@ export function LogStatusEditor({
                 "disabled:cursor-not-allowed disabled:opacity-60",
                 isActive
                   ? option.activeClass
-                  : "border-border bg-background text-muted-foreground hover:bg-muted/60",
+                  : "border-border bg-background text-brand-muted hover:bg-brand-surface-alt",
               )}
             >
-              <Icon
-                className={cn("h-5 w-5", isActive ? option.iconClass : "text-muted-foreground")}
-              />
+              <Icon className={cn("h-5 w-5", isActive ? option.iconClass : "text-brand-muted")} />
               <span className="text-center text-xs font-semibold leading-tight">
                 {option.label}
               </span>
@@ -151,10 +142,10 @@ export function LogStatusEditor({
         })}
       </div>
 
-      {saving && <p className="text-center text-xs text-muted-foreground">Сохранение...</p>}
+      {saving && <p className="text-center text-xs text-brand-muted">Сохранение...</p>}
 
       {error && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-brand-error">
           {error}
         </p>
       )}
@@ -165,7 +156,7 @@ export function LogStatusEditor({
         <Button
           type="button"
           variant="outline"
-          className="w-full border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+          className="w-full border-brand-error/30 text-brand-error hover:bg-brand-error-soft hover:text-brand-error-strong"
           disabled={disabled || status === "CANCELLED"}
           onClick={() => handleStatusChange("CANCELLED")}
         >
@@ -177,7 +168,7 @@ export function LogStatusEditor({
       {logId > 0 ? (
         <LogHistoryViewer logId={logId} />
       ) : (
-        <div className="text-xs text-muted-foreground">Изменений пока нет</div>
+        <div className="text-xs text-brand-muted">Изменений пока нет</div>
       )}
     </div>
   )

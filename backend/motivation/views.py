@@ -1,7 +1,11 @@
 # backend/motivation/views.py
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
-from typing_extensions import Literal, cast
+from typing_extensions import Literal
+from rest_framework.request import Request as DRFRequest
+from typing import cast
+
 
 from django.conf import settings
 from django.db import transaction
@@ -15,6 +19,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from motivation.services.task_logs import assert_week_open
 
 from motivation.models import (
     User,
@@ -49,11 +55,11 @@ PROVIDER_FIELDS = {
 class OnboardedUserPermission(permissions.BasePermission):
     """Пропускает только пользователей с завершённым онбордингом (роль задана)."""
 
-    def has_permission(self, request, view):
-            if getattr(request, "auth", None) == "bff-service":
-                return True
-            user = getattr(request, "user", None)
-            return cast(Literal[True], bool(user and user.is_authenticated and user.role))
+    def has_permission(self, request, view) -> bool:
+        if getattr(request, "auth", None) == "bff-service":
+            return True
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and user.role)
 
 
 class OAuthLoginView(APIView):
@@ -114,9 +120,9 @@ class ServiceOrUserPermission(permissions.BasePermission):
 
 
 def _user_payload(user: User, invite_code: str | None = None) -> dict:
-    membership = user.family_memberships.select_related("family").first()
+    membership = user.family_memberships.select_related("family").first()  # type: ignore[override]
     payload = {
-        "id": user.id,
+        "id": user.id,  # type: ignore[override]
         "telegram_id": user.telegram_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
@@ -629,9 +635,7 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
-        from rest_framework.exceptions import ValidationError as DRFValidationError
-        from motivation.services.task_logs import assert_week_open
-
+        request = cast(DRFRequest, self.request)
         task = serializer.validated_data["task"]
         log_date = serializer.validated_data["date"]
         user = self.request.user
@@ -654,7 +658,7 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as e:
             raise DRFValidationError({"detail": e.messages[0]})
 
-        initial_status = serializer.validated_data.get("status", TaskLog.Status.PENDING)
+        initial_status = request.data.get("status", TaskLog.Status.PENDING)
         serializer.validated_data["status"] = TaskLog.Status.PENDING
         log = serializer.save(earned_amount=Decimal("0.00"))
 
@@ -662,14 +666,29 @@ class TaskLogViewSet(viewsets.ModelViewSet):
             change_task_log_status(log.id, initial_status, user)
 
     def perform_update(self, serializer):
+
+        logger = logging.getLogger("motivation.auth")
+        logger.debug(
+            "PATCH task-log id=%s raw_status=%r current=%r payload=%r",
+            serializer.instance.id,
+            self.request.data.get("status"),
+            serializer.instance.status,
+            serializer.validated_data,
+        )
+
         user = self.request.user
         instance = serializer.instance
-        new_status = serializer.validated_data.get("status")
+
+        # status объявлен read_only в TaskLogSerializer,
+        # поэтому берём его из сырого тела запроса.
+        new_status = self.request.data.get("status")
 
         if new_status and new_status != instance.status:
             change_task_log_status(instance.id, new_status, user)
+            instance.refresh_from_db()
 
-        serializer.save()
+        if serializer.validated_data:
+            serializer.save()
 
     @action(detail=False, methods=["post"], url_path="bulk-approve")
     def bulk_approve(self, request):
