@@ -88,7 +88,7 @@ def change_task_log_status(log_id, new_status, user):
         is_child = getattr(user, "role", None) == User.Role.CHILD
         is_parent = getattr(user, "role", None) == User.Role.PARENT
         if is_child and log.task.child.pk != user.id:
-            raise PermissionDenied(...)
+            raise PermissionDenied("Ребёнок не может изменять чужие задания.")
         if is_child and new_status in (TaskLog.Status.APPROVED, TaskLog.Status.REJECTED):
             raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
         if not is_child and not is_parent:

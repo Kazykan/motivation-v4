@@ -173,12 +173,25 @@ class WeeklyReportSerializer(serializers.ModelSerializer):
 
 class TaskLogHistorySerializer(serializers.ModelSerializer):
     changed_by_name = serializers.SerializerMethodField()
+    changed_by_role = serializers.SerializerMethodField()
 
     class Meta:
         model = TaskLogHistory
-        fields = ("id", "old_status", "new_status", "changed_by_name", "changed_at")
+        fields = (
+            "id",
+            "old_status",
+            "new_status",
+            "changed_by_name",
+            "changed_by_role",
+            "changed_at",
+        )
 
     def get_changed_by_name(self, obj):
         if not obj.changed_by:
             return "Система"
         return obj.changed_by.first_name or obj.changed_by.username
+
+    def get_changed_by_role(self, obj):
+        if not obj.changed_by:
+            return None
+        return getattr(obj.changed_by, "role", None) or None

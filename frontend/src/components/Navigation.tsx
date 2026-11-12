@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -13,11 +12,16 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useLogSyncStore } from "@/store/useLogSyncStore"
+import { useMe } from "@/hooks/useMe"
 
 export function Navigation() {
   const pathname = usePathname()
-  const [role] = useState<"PARENT" | "CHILD">("PARENT")
+  const { me, ready } = useMe()
   const isSyncing = useLogSyncStore((state) => state.isSyncing)
+
+  if (!ready || !me?.onboarded) return null
+
+  const role = me.role
 
   const parentNav = [
     { label: "Дети", href: "/parent/children", icon: Users },
@@ -28,7 +32,7 @@ export function Navigation() {
 
   const childNav = [
     { label: "Задания", href: "/child/tasks", icon: CheckSquare },
-    { label: "Баланс", href: "/child/balance", icon: Wallet },
+    { label: "Кошелёк", href: "/child/balance", icon: Wallet },
     { label: "Профиль", href: "/child/profile", icon: UserIcon },
   ]
 
@@ -47,7 +51,6 @@ export function Navigation() {
         {currentNav.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
-
           return (
             <Link
               key={item.href}

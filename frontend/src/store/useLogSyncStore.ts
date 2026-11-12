@@ -103,7 +103,12 @@ export const useLogSyncStore = create<LogSyncState>((set, get) => ({
       const queryClient = get().queryClient
 
       if (succeeded.size > 0 && queryClient) {
-        await queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
+        await queryClient.invalidateQueries({
+          predicate: (q) => {
+            const head = q.queryKey[0]
+            return head === "weekly-review" || head === "child-weekly-review"
+          },
+        })
       }
 
       if (Object.keys(get().buffer).length > 0) {

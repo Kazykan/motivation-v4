@@ -18,6 +18,7 @@ import {
 import { LogStatusValue, WeeklyReviewItem } from "@/types/props"
 import { WEEK_DAYS_SHORT, formatDateISO, formatLongDay } from "@/lib/dates"
 import { formatMoney } from "@/lib/money"
+import { LogHistoryViewer } from "../LogHistoryViewer"
 
 interface ReviewTaskDetailProps {
   item: WeeklyReviewItem
@@ -230,10 +231,7 @@ export function ReviewTaskDetail({
 
                 {!isPending && (
                   <div className="flex flex-col gap-1 border-t border-brand-muted/15 pt-2">
-                    <div className="flex items-center gap-1.5 text-[11px] text-brand-muted">
-                      <UserRound className="h-3 w-3" />
-                      Изменил: Родитель
-                    </div>
+                    <LogHistoryViewer logId={log.id} />
                     <div className="flex items-center gap-1.5 text-[11px] text-brand-muted">
                       <Clock3 className="h-3 w-3" />
                       Когда: Недавно

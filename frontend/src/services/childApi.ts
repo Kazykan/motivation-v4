@@ -1,10 +1,8 @@
 import { api } from "@/lib/axios"
+import { LogStatusValue } from "@/types/props"
 
 export const childApi = {
   async getMyTasks() {
-    // BFF: /api/tasks без child_id вернёт задачи текущего ребёнка (если
-    // бэкенд умеет фильтровать по X-Child-Telegram-Id — надо добавить
-    // поддержку в route.ts, сейчас route.ts это не делает).
     const res = await api.get("/api/tasks")
     return res.data
   },
@@ -23,12 +21,34 @@ export const childApi = {
     return res.data
   },
 
-  async getMyReports() {
-    const res = await api.get("/api/parent/reports") // ❌ нужен child-роут
-    return res.data
-  },
   async getMyWeeklyReport() {
     const res = await api.get("/api/tasks/my-weekly-report")
+    return res.data
+  },
+
+  async getMyReports() {
+    const res = await api.get("/api/child/reports")
+    return res.data
+  },
+
+  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
+    const res = await api.post("/api/task-logs", data)
+    return res.data
+  },
+
+  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
+    const res = await api.patch(`/api/task-logs/${logId}`, { status })
+    return res.data
+  },
+
+  async getTaskLogHistory(logId: number) {
+    const res = await api.get(`/api/task-logs/${logId}/history`)
+    return res.data
+  },
+  async getWeeklyReview(weekStart?: string) {
+    const params: Record<string, any> = {}
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/api/child/weekly-review", { params })
     return res.data
   },
 }

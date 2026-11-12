@@ -127,6 +127,7 @@ export interface TaskLogHistoryItem {
   old_status: string
   new_status: string
   changed_by_name: string
+  changed_by_role: string | null
   changed_at: string
 }
 
@@ -209,4 +210,48 @@ export interface ParentStepProps {
 export interface ChildStepProps {
   onBack: () => void
   onJoined: () => void
+}
+
+// ── Child task card ────────────────────────────────────────
+export interface ChildTaskLog {
+  id: number
+  date: string
+  status: LogStatusValue | "PENDING" | "NONE"
+  earned_amount: string | number
+}
+
+export interface ChildWeeklyItem {
+  taskId: number
+  title: string
+  description: string
+  weeklyPrice: string | number
+  scheduleType: "FIXED" | "FLEXIBLE"
+  targetCount: number
+  targetDays?: number[]
+  weekStart: string
+  weekEnd: string
+  weekClosed: boolean
+  child: WeeklyReviewChild
+  summary: WeeklyReviewSummary
+  logs: ChildTaskLog[]
+}
+
+export interface ChildLogStatusEditorProps {
+  logId: number | null
+  date: string
+  status: LogStatusValue | "NONE"
+  weekClosed?: boolean
+  onMarkDone: (logId: number | null, date: string) => Promise<void>
+  onCancel: (logId: number) => Promise<void>
+  onClose: () => void
+}
+
+export interface ChildTaskCardProps {
+  item: ChildWeeklyItem
+  onChangeStatus: (
+    logId: number | null,
+    status: LogStatusValue,
+    taskId: number,
+    date: string,
+  ) => Promise<void>
 }

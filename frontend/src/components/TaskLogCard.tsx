@@ -1,6 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { TaskLogCardProps } from "@/types/props"
 import { CheckCircle2 } from "lucide-react"
+import { formatShortDay } from "@/lib/dates"
+import { formatMoney } from "@/lib/money"
 
 export function TaskLogCard({ log }: TaskLogCardProps) {
   return (
@@ -14,10 +16,12 @@ export function TaskLogCard({ log }: TaskLogCardProps) {
             <span className="text-sm font-medium text-brand-dark">
               {log.task_title || "Задание выполнено"}
             </span>
-            <span className="text-xs text-brand-muted">{log.date}</span>
+            <span className="text-xs text-brand-muted">{formatShortDay(log.date)}</span>
           </div>
         </div>
-        <span className="text-sm font-semibold text-brand-success">+{log.earned || 300} ₽</span>
+        <span className="text-sm font-semibold text-brand-success">
+          {formatMoney(log.earned ?? 0)}
+        </span>
       </CardContent>
     </Card>
   )

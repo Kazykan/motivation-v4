@@ -20,6 +20,12 @@ export function LogHistoryViewer({ logId }: LogHistoryViewerProps) {
     return <div className="text-xs text-brand-muted">Изменений пока нет</div>
   }
 
+  const roleLabel = (role: string | null | undefined) => {
+    if (role === "PARENT") return "Родитель"
+    if (role === "CHILD") return "Ребёнок"
+    return ""
+  }
+
   const lastChange = history[0]
 
   const formattedDate = lastChange?.changed_at
@@ -35,7 +41,10 @@ export function LogHistoryViewer({ logId }: LogHistoryViewerProps) {
     <div className="space-y-1 border-t border-brand-muted/15 pt-2">
       <div className="flex items-center gap-1.5 text-[11px] text-brand-muted">
         <UserRound className="h-3 w-3" />
-        <span>Изменил: {lastChange?.changed_by_name || "Родитель"}</span>
+        <span>
+          Изменил: {lastChange?.changed_by_name || "—"}
+          {lastChange?.changed_by_role ? ` (${roleLabel(lastChange.changed_by_role)})` : ""}
+        </span>
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-brand-muted">
         <Clock3 className="h-3 w-3" />
