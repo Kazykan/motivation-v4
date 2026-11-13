@@ -186,8 +186,8 @@ export default function ChildProfilePage() {
                       onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
                       autoFocus
                       captionLayout="dropdown"
-                      fromYear={2000}
-                      toYear={new Date().getFullYear()}
+                      startMonth={new Date(2000, 0)}
+                      endMonth={new Date(new Date().getFullYear(), 11)}
                     />
                   </PopoverContent>
                 </Popover>
