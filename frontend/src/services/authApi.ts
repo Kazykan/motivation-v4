@@ -11,6 +11,9 @@ export interface MeResponse {
   onboarded: boolean
   family_id: number | null
   invite_code?: string
+  birth_date?: string | null
+  gender?: "MALE" | "FEMALE" | null
+  family_name?: string | null
 }
 
 export const authApi = {

@@ -1,41 +1,61 @@
+/* frontend/src/app/globals.css */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ────────────────────────────────────────────────────────────
+ * ТЕМА: маппинг CSS-переменных → Tailwind utility-классы
+ * ──────────────────────────────────────────────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
-  /* Фирменная палитра семейного приложения */
-  --color-brand-primary: #fbbf24; /* Теплый янтарный (акцентный) */
-  --color-brand-primary-hover: #f59e0b; /* Янтарный при наведении */
-  --color-brand-primary-soft: #fef3c7; /* Светлый фон акцента */
-  --color-brand-primary-soft-hover: #fde68a;
+  /* ФОНЫ */
+  --color-app-bg: #e9ecef; /* Фон страницы */
+  --color-app-card: #ffffff; /* Фон карточек */
+  --color-app-surface: #f4f5f7; /* Внутренние блоки (календарь, итоги) */
 
-  --color-brand-dark: #0f172a; /* Глубокий темно-синий для текста/шапок */
-  --color-brand-muted: #64748b; /* Второстепенный текст */
-  --color-brand-surface: #f7f6f2; /* Фоновый для карточек и модалок */
-  --color-brand-surface-alt: #f1f5f9; /* Альтернативный фон */
+  /* ТЕКСТ */
+  --color-text-main: #1a1a1a;
+  --color-text-muted: #8e95a3;
 
-  --color-brand-success: #10b981; /* Зеленый (деньги, подтверждено) */
+  /* АКЦЕНТЫ (Действия) */
+  --color-brand-action: #9aea1c;
+  --color-brand-action-hover: #85d616;
+  --color-brand-action-text: #1a1a1a;
+
+  /* ФИНАНСОВЫЕ СТАТУСЫ */
+  --color-finance-positive: #10b981; /* Заработано */
+  --color-finance-pending: #f59e0b; /* Ждёт */
+  --color-finance-negative: #f43f5e; /* Отклонено */
+
+  --color-brand-success: #10b981;
   --color-brand-success-soft: #d1fae5;
   --color-brand-success-strong: #047857;
-
-  --color-brand-error: #f43f5e; /* Красный (штрафы, удаление) */
-  --color-brand-error-soft: #ffe4e6;
-  --color-brand-error-strong: #be123c;
-
-  --color-brand-warning: #f59e0b; /* Янтарный-акцент для «ожидает» */
+  --color-brand-warning: #f59e0b;
   --color-brand-warning-soft: #fef3c7;
   --color-brand-warning-strong: #b45309;
+  --color-brand-error: #f43f5e;
+  --color-brand-error-soft: #ffe4e6;
+  --color-brand-error-strong: #be123c;
+  --color-brand-dark: #1a1a1a;
+  --color-brand-muted: #8e95a3;
+  --color-brand-surface-alt: #f4f5f7;
+  --color-brand-primary: #9aea1c;
+  --color-brand-primary-hover: #85d616;
+  --color-brand-primary-soft: #eafbc9;
 
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  /* ДОПОЛНИТЕЛЬНЫЕ АКЦЕНТЫ */
+  --color-accent-blue: #6ed6e8;
+  --color-accent-peach: #f6c1a9;
+
+  /* Радиусы бренда */
+  --radius-card: 24px;
+  --radius-button: 16px;
+
+  /* ── shadcn: подключаем переменные из :root ── */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -44,11 +64,13 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -65,6 +87,12 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+
+  /* Производные радиусы от базового --radius */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -74,34 +102,54 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ────────────────────────────────────────────────────────────
+ * СВЕТЛАЯ ТЕМА
+ * Базовый --radius = 16px (совпадает с --radius-button),
+ * shadcn-переменные замаплены на бренд-токены.
+ * ──────────────────────────────────────────────────────────── */
 :root {
-  --radius: 1rem;
+  --radius: 16px;
+
   --shadow-soft: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 0 1px 1px rgba(0, 0, 0, 0.02);
   --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+
+  /* Маппинг shadcn → бренд-токены */
+  --background: #e9ecef; /* = app-bg */
+  --foreground: #1a1a1a; /* = text-main */
+
+  --card: #ffffff; /* = app-card */
+  --card-foreground: #1a1a1a;
+
+  --popover: #ffffff; /* = app-card */
+  --popover-foreground: #1a1a1a;
+
+  --primary: #9aea1c; /* = brand-action */
+  --primary-foreground: #1a1a1a; /* = brand-action-text */
+
+  --secondary: #f4f5f7; /* = app-surface */
+  --secondary-foreground: #1a1a1a;
+
+  --muted: #f4f5f7; /* = app-surface */
+  --muted-foreground: #8e95a3; /* = text-muted */
+
+  --accent: #f4f5f7; /* = app-surface */
+  --accent-foreground: #1a1a1a;
+
+  --destructive: #f43f5e; /* = finance-negative */
+  --destructive-foreground: #ffffff;
+
+  --border: #f4f5f7; /* = app-surface */
+  --input: #f4f5f7;
+  --ring: #9aea1c; /* = brand-action */
+
+  /* Графики (нейтральные) */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+
+  /* Sidebar */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -110,42 +158,28 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  --color-brand-success: #10b981;
+  --color-brand-success-soft: #d1fae5;
+  --color-brand-success-strong: #047857;
+  --color-brand-warning: #f59e0b;
+  --color-brand-warning-soft: #fef3c7;
+  --color-brand-warning-strong: #b45309;
+  --color-brand-error: #f43f5e;
+  --color-brand-error-soft: #ffe4e6;
+  --color-brand-error-strong: #be123c;
+
+  --color-brand-dark: #1a1a1a;
+  --color-brand-muted: #8e95a3;
+  --color-brand-surface-alt: #f4f5f7;
+  --color-brand-primary: #9aea1c;
+  --color-brand-primary-hover: #85d616;
+  --color-brand-primary-soft: #eafbc9;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
+/* ────────────────────────────────────────────────────────────
+ * БАЗОВЫЕ СТИЛИ
+ * ──────────────────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;

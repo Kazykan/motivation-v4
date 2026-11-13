@@ -86,7 +86,6 @@ export default function ChildTasksPage() {
     queueChange({ logId, taskId, date, status }, queryClient)
   }
 
-  // Сводка в детских формулировках
   const totals = useMemo(() => {
     let canEarn = 0
     let earned = 0
@@ -117,10 +116,10 @@ export default function ChildTasksPage() {
     <div className="flex flex-col gap-6 pb-20">
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-brand-dark">Мои задания</h1>
+          <h1 className="text-xl font-bold tracking-tight text-text-main">Мои задания</h1>
           <Link
             href="/child/balance"
-            className="text-xs font-medium text-brand-primary-hover hover:text-brand-warning-strong"
+            className="text-xs font-medium text-brand-action-hover hover:text-brand-action-text"
           >
             Кошелёк →
           </Link>
@@ -134,41 +133,45 @@ export default function ChildTasksPage() {
           disableNext={nextDisabled}
         />
 
-        {/* Сводка недели — детские формулировки */}
-        <div className="rounded-[24px] bg-[#1A1A1A] p-5 text-white shadow-lg">
+        {/* Сводка недели — светлая карточка */}
+        <div className="rounded-card bg-app-card p-5 shadow-sm border border-app-surface">
           <CardContent className="p-0">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-green-600/20 text-green-400">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-finance-positive/10 text-finance-positive">
                 <Wallet className="h-6 w-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-semibold text-white leading-tight">Моя неделя</span>
-                <span className="text-[11px] text-gray-400">Заданий: {items.length}</span>
+                <span className="text-sm font-semibold text-text-main leading-tight">
+                  Моя неделя
+                </span>
+                <span className="text-[11px] text-text-muted">Заданий: {items.length}</span>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
                   Заработано
                 </span>
-                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-green-400 tabular-nums">
+                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-positive tabular-nums">
                   <Check className="h-3 w-3 stroke-[2.5]" />
                   {formatMoney(totals.earned)}
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-gray-500">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
                   Ждёт проверки
                 </span>
-                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-amber-400 tabular-nums">
+                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-pending tabular-nums">
                   <Clock3 className="h-3 w-3" />
                   {formatMoney(totals.pending)}
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-gray-500">Можно ещё</span>
-                <span className="text-sm font-semibold text-white tabular-nums">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Можно ещё
+                </span>
+                <span className="text-sm font-semibold text-text-main tabular-nums">
                   {formatMoney(totals.canStillEarn)}
                 </span>
               </div>
@@ -179,14 +182,14 @@ export default function ChildTasksPage() {
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-brand-dark">Задания на неделю</h2>
-          <span className="text-xs text-brand-muted">Все ({items.length})</span>
+          <h2 className="text-base font-semibold text-text-main">Задания на неделю</h2>
+          <span className="text-xs text-text-muted">Все ({items.length})</span>
         </div>
 
         {isLoading ? (
-          <div className="py-8 text-center text-sm text-brand-muted">Загрузка заданий...</div>
+          <div className="py-8 text-center text-sm text-text-muted">Загрузка заданий...</div>
         ) : items.length === 0 ? (
-          <div className="py-8 text-center text-sm text-brand-muted">Нет активных заданий</div>
+          <div className="py-8 text-center text-sm text-text-muted">Нет активных заданий</div>
         ) : (
           <div className="flex flex-col gap-3">
             {items.map((item) => (

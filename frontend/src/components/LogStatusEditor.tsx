@@ -79,11 +79,11 @@ export function LogStatusEditor({
   }
 
   return (
-    <div className="animate-in slide-in-from-bottom-2 space-y-3 rounded-xl border border-brand-muted/20 bg-card p-3 shadow-sm duration-200">
+    <div className="animate-in slide-in-from-bottom-2 space-y-3 rounded-xl border border-app-surface bg-app-card p-3 shadow-sm duration-200">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-brand-dark">Статус выполнения</p>
-          <p className="text-xs text-brand-muted">{formatLongDay(date)}</p>
+          <p className="text-sm font-semibold text-text-main">Статус выполнения</p>
+          <p className="text-xs text-text-muted">{formatLongDay(date)}</p>
         </div>
 
         <Button
@@ -106,7 +106,7 @@ export function LogStatusEditor({
       )}
 
       {status === "CANCELLED" && !weekClosed && (
-        <div className="rounded-lg border border-brand-muted/20 bg-brand-surface-alt p-2 text-[11px] text-brand-muted">
+        <div className="rounded-lg border border-app-surface bg-app-surface p-2 text-[11px] text-text-muted">
           Отметка удалена. Выберите новый статус, чтобы восстановить запись. История изменений
           сохранена.
         </div>
@@ -129,10 +129,10 @@ export function LogStatusEditor({
                 "disabled:cursor-not-allowed disabled:opacity-60",
                 isActive
                   ? option.activeClass
-                  : "border-border bg-background text-brand-muted hover:bg-brand-surface-alt",
+                  : "border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
               )}
             >
-              <Icon className={cn("h-5 w-5", isActive ? option.iconClass : "text-brand-muted")} />
+              <Icon className={cn("h-5 w-5", isActive ? option.iconClass : "text-text-muted")} />
               <span className="text-center text-xs font-semibold leading-tight">
                 {option.label}
               </span>
@@ -142,7 +142,7 @@ export function LogStatusEditor({
         })}
       </div>
 
-      {saving && <p className="text-center text-xs text-brand-muted">Сохранение...</p>}
+      {saving && <p className="text-center text-xs text-text-muted">Сохранение...</p>}
 
       {error && (
         <p role="alert" className="text-xs text-brand-error">
@@ -168,7 +168,7 @@ export function LogStatusEditor({
       {logId > 0 ? (
         <LogHistoryViewer logId={logId} />
       ) : (
-        <div className="text-xs text-brand-muted">Изменений пока нет</div>
+        <div className="text-xs text-text-muted">Изменений пока нет</div>
       )}
     </div>
   )

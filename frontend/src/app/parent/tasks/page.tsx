@@ -65,7 +65,7 @@ export default function ParentTasksPage() {
   return (
     <div className="flex flex-col gap-6 pb-16">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Управление заданиями</h1>
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Управление заданиями</h1>
         <Button
           size="sm"
           onClick={handleCreateNew}
@@ -82,8 +82,8 @@ export default function ParentTasksPage() {
           className={cn(
             "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
             selectedChildId === "ALL"
-              ? "bg-brand-dark text-white shadow-xs"
-              : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt",
+              ? "bg-brand-primary text-brand-dark shadow-xs"
+              : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
           )}
         >
           Все дети ({tasks.length})
@@ -101,8 +101,8 @@ export default function ParentTasksPage() {
               className={cn(
                 "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
                 selectedChildId === childIdStr
-                  ? "bg-brand-dark text-white shadow-xs"
-                  : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt",
+                  ? "bg-brand-primary text-brand-dark shadow-xs"
+                  : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
               )}
             >
               {child.first_name || child.name || "Ребенок"} ({childTasksCount})
@@ -112,11 +112,9 @@ export default function ParentTasksPage() {
       </div>
 
       {loading ? (
-        <div className="py-12 text-center text-sm text-brand-muted">Загрузка заданий...</div>
+        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
       ) : tasks.length === 0 ? (
-        <div className="py-12 text-center text-sm text-brand-muted">
-          Нет заданий для отображения
-        </div>
+        <div className="py-12 text-center text-sm text-text-muted">Нет заданий для отображения</div>
       ) : (
         <div className="flex flex-col gap-3">
           {tasks.map((task) => {

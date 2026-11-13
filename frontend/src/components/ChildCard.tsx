@@ -26,25 +26,25 @@ export function ChildCard({ child, action }: ChildCardProps) {
   const genderLabel = getGenderLabel()
 
   return (
-    <Card className="rounded-2xl border-brand-muted/15 bg-white shadow-xs transition-all hover:shadow-md">
+    <Card className="rounded-2xl border-app-surface bg-app-card shadow-xs transition-all hover:shadow-md">
       <CardContent className="flex items-center justify-between p-4">
         <div className="flex items-center gap-3.5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-primary-soft text-brand-warning-strong shadow-xs">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-action/15 text-brand-action-hover shadow-xs">
             <Users className="h-6 w-6" />
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-bold text-brand-dark">
+            <span className="text-sm font-bold text-text-main">
               {child.first_name || child.name || child.username}
               {genderLabel && ` • ${genderLabel}`}
               {age !== null && ` • ${age} лет`}
             </span>
-            <div className="flex items-center gap-3 text-xs text-brand-muted">
+            <div className="flex items-center gap-3 text-xs text-text-muted">
               <span>
                 Баланс:{" "}
-                <strong className="font-semibold text-brand-dark">{child.balance || 0} ₽</strong>
+                <strong className="font-semibold text-text-main">{child.balance || 0} ₽</strong>
               </span>
               {child.weekly_gain !== undefined && (
-                <span className="font-medium text-brand-success">
+                <span className="font-medium text-finance-positive">
                   +{child.weekly_gain} ₽ за неделю
                 </span>
               )}

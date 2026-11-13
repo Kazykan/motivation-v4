@@ -15,21 +15,21 @@ export default function ParentProfilePage() {
   }
 
   if (!ready) {
-    return <div className="py-8 text-center text-sm text-brand-muted">Загрузка профиля...</div>
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-bold tracking-tight text-brand-dark">Профиль</h1>
+      <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
 
-      <Card className="border-brand-muted/20 shadow-sm">
+      <Card className="border-app-surface bg-app-card shadow-sm">
         <CardContent className="flex items-center gap-4 p-5">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary-soft text-brand-warning-strong">
             <User className="h-8 w-8" />
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-brand-dark">
+              <h2 className="text-base font-semibold text-text-main">
                 {[me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Родитель"}
               </h2>
               <Badge
@@ -39,16 +39,16 @@ export default function ParentProfilePage() {
                 Родитель
               </Badge>
             </div>
-            <span className="text-xs text-brand-muted">
+            <span className="text-xs text-text-muted">
               {me?.telegram_id ? `Telegram ID: ${me.telegram_id}` : "Вход через OAuth"}
             </span>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-brand-muted/20">
+      <Card className="border-app-surface bg-app-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-brand-dark">Сессия</CardTitle>
+          <CardTitle className="text-sm font-semibold text-text-main">Сессия</CardTitle>
         </CardHeader>
         <CardContent className="pt-0">
           <Button variant="destructive" size="sm" className="h-9 w-full" onClick={handleLogout}>

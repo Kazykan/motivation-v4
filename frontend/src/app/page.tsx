@@ -50,7 +50,7 @@ export default function Home() {
 
   if (phase === "init" || phase === "loading") {
     return (
-      <div className="flex min-h-[80vh] items-center justify-center text-sm text-brand-muted">
+      <div className="flex min-h-[80vh] items-center justify-center text-sm text-text-muted">
         Загрузка...
       </div>
     )
@@ -60,8 +60,8 @@ export default function Home() {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-6 px-6 text-center">
         <div className="flex flex-col gap-2">
-          <h1 className="text-xl font-bold text-brand-dark">Вход в приложение</h1>
-          <p className="max-w-xs text-sm text-brand-muted">
+          <h1 className="text-xl font-bold text-text-main">Вход в приложение</h1>
+          <p className="max-w-xs text-sm text-text-muted">
             Выберите способ входа. Если вы открыли приложение в браузере — войдите через Google или
             VK. Если через Telegram-бота — приложение войдёт автоматически.
           </p>
@@ -74,7 +74,7 @@ export default function Home() {
   if (phase === "error") {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-sm text-brand-error">{error}</p>
+        <p className="text-sm text-finance-negative">{error}</p>
       </div>
     )
   }

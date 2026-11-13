@@ -64,7 +64,7 @@ export default function ChildBalancePage() {
   return (
     <div className="flex flex-col gap-6 pb-20">
       <section className="flex flex-col gap-3">
-        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Кошелёк</h1>
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Кошелёк</h1>
 
         <WeekNavigator
           weekStart={weekStartIso}
@@ -77,37 +77,37 @@ export default function ChildBalancePage() {
           disableNext={weekStart >= getMonday(new Date())}
         />
 
-        {/* Всего накоплено */}
-        <Card className="border-brand-muted/20 bg-brand-dark text-white shadow-lg">
+        {/* Всего накоплено — светлая карточка */}
+        <Card className="border-app-surface bg-app-card shadow-sm">
           <CardContent className="flex flex-col gap-3 p-5">
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-1">
-                <span className="text-xs text-brand-muted">Всего накоплено</span>
-                <span className="text-3xl font-bold">{formatMoney(totalSaved)}</span>
+                <span className="text-xs text-text-muted">Всего накоплено</span>
+                <span className="text-3xl font-bold text-text-main">{formatMoney(totalSaved)}</span>
               </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-primary">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-finance-positive/10 text-finance-positive">
                 <Wallet className="h-6 w-6" />
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 border-t border-brand-muted/20 pt-3 text-xs text-center">
+            <div className="grid grid-cols-3 gap-2 border-t border-app-surface pt-3 text-xs text-center">
               <div className="flex flex-col gap-0.5">
-                <span className="text-brand-muted">Заработано</span>
-                <span className="flex items-center justify-center gap-1 font-semibold text-green-400">
+                <span className="text-text-muted">Заработано</span>
+                <span className="flex items-center justify-center gap-1 font-semibold text-finance-positive">
                   <Check className="h-3 w-3" />
                   {formatMoney(earned)}
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-brand-muted">Ждёт проверки</span>
-                <span className="flex items-center justify-center gap-1 font-semibold text-amber-400">
+                <span className="text-text-muted">Ждёт проверки</span>
+                <span className="flex items-center justify-center gap-1 font-semibold text-finance-pending">
                   <Clock3 className="h-3 w-3" />
                   {formatMoney(pending)}
                 </span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-brand-muted">Можно ещё</span>
-                <span className="font-semibold text-white">{formatMoney(remaining)}</span>
+                <span className="text-text-muted">Можно ещё</span>
+                <span className="font-semibold text-text-main">{formatMoney(remaining)}</span>
               </div>
             </div>
           </CardContent>
@@ -116,26 +116,26 @@ export default function ChildBalancePage() {
 
       {/* Выплаты */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-brand-dark">Выплаты</h2>
+        <h2 className="text-base font-semibold text-text-main">Выплаты</h2>
         {reports.length === 0 ? (
-          <div className="py-6 text-center text-sm text-brand-muted">Пока нет закрытых недель</div>
+          <div className="py-6 text-center text-sm text-text-muted">Пока нет закрытых недель</div>
         ) : (
           <div className="flex flex-col gap-2">
             {(reports as WeeklyReportDto[]).map((r) => {
               const closed = r.status === "CLOSED" || r.is_payout_confirmed
               return (
-                <Card key={r.id} className="border-brand-muted/20">
+                <Card key={r.id} className="border-app-surface bg-app-card">
                   <CardContent className="flex items-center justify-between p-3">
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-brand-dark">
+                      <span className="text-sm font-medium text-text-main">
                         {r.start_date} — {r.end_date}
                       </span>
-                      <span className="text-[11px] text-brand-muted">
+                      <span className="text-[11px] text-text-muted">
                         {closed ? "Выплачено" : "Ждёт закрытия недели"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-brand-dark">
+                      <span className="text-sm font-semibold text-text-main">
                         {formatMoney(r.total_paid || r.calculated_amount)}
                       </span>
                       <Badge
@@ -158,11 +158,11 @@ export default function ChildBalancePage() {
 
       {/* История выполнения за выбранную неделю */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-brand-dark">Выполнения за неделю</h2>
+        <h2 className="text-base font-semibold text-text-main">Выполнения за неделю</h2>
         {logsLoading || reportLoading ? (
-          <div className="py-8 text-center text-sm text-brand-muted">Загрузка...</div>
+          <div className="py-8 text-center text-sm text-text-muted">Загрузка...</div>
         ) : weekLogs.length === 0 ? (
-          <div className="py-8 text-center text-sm text-brand-muted">За эту неделю пусто</div>
+          <div className="py-8 text-center text-sm text-text-muted">За эту неделю пусто</div>
         ) : (
           <div className="flex flex-col gap-3">
             {weekLogs.map((log: any) => (

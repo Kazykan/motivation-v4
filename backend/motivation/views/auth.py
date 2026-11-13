@@ -20,15 +20,18 @@ PROVIDER_FIELDS = {
 
 
 def _user_payload(user: User, invite_code: str | None = None) -> dict:
-    membership = user.family_memberships.select_related("family").first()  # type: ignore[override]
+    membership = user.family_memberships.select_related("family").first()
     payload = {
-        "id": user.id,  # type: ignore[override]
+        "id": user.id,
         "telegram_id": user.telegram_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "role": user.role,
         "onboarded": bool(user.role) and membership is not None,
         "family_id": membership.family_id if membership else None,
+        "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+        "gender": user.gender or None,
+        "family_name": membership.family.name if membership else None,
     }
     if invite_code is not None:
         payload["invite_code"] = invite_code

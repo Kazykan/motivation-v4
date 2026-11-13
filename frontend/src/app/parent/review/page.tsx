@@ -211,7 +211,7 @@ export default function ParentReviewPage() {
   }
 
   if (!ready) {
-    return <div className="py-12 text-center text-sm text-brand-muted">Загрузка...</div>
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
   }
 
   if (activeTaskView) {
@@ -228,7 +228,7 @@ export default function ParentReviewPage() {
   return (
     <div className="flex flex-col gap-6 pb-20">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Проверка заданий</h1>
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Проверка заданий</h1>
       </div>
 
       <WeekNavigator
@@ -253,9 +253,9 @@ export default function ParentReviewPage() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-sm text-brand-muted">Загрузка заданий...</div>
+        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
       ) : reviewsData.length === 0 ? (
-        <div className="py-12 text-center text-sm text-brand-muted">Нет заданий на проверку</div>
+        <div className="py-12 text-center text-sm text-text-muted">Нет заданий на проверку</div>
       ) : (
         <div className="flex flex-col gap-4">
           {reviewsData.map((item) => (

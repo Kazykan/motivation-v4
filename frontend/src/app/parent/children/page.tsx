@@ -60,13 +60,13 @@ export default function ParentChildrenPage() {
   }, [])
 
   if (!ready) {
-    return <div className="py-12 text-center text-sm text-brand-muted">Загрузка...</div>
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
   }
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Дети</h1>
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Дети</h1>
         <Button
           onClick={openInviteDialog}
           className="bg-brand-primary text-brand-dark hover:bg-brand-primary-hover"
@@ -78,9 +78,9 @@ export default function ParentChildrenPage() {
 
       <div className="flex flex-col gap-3">
         {loading ? (
-          <div className="py-8 text-center text-sm text-brand-muted">Загрузка списка детей...</div>
+          <div className="py-8 text-center text-sm text-text-muted">Загрузка списка детей...</div>
         ) : children.length === 0 ? (
-          <div className="py-8 text-center text-sm text-brand-muted">Список детей пуст</div>
+          <div className="py-8 text-center text-sm text-text-muted">Список детей пуст</div>
         ) : (
           <div className="flex flex-col gap-3">
             {children.map((child: any) => (

@@ -13,11 +13,11 @@ export function LogHistoryViewer({ logId }: LogHistoryViewerProps) {
   })
 
   if (isLoading) {
-    return <div className="text-xs text-brand-muted">Загрузка истории...</div>
+    return <div className="text-xs text-text-muted">Загрузка истории...</div>
   }
 
   if (history.length === 0) {
-    return <div className="text-xs text-brand-muted">Изменений пока нет</div>
+    return <div className="text-xs text-text-muted">Изменений пока нет</div>
   }
 
   const roleLabel = (role: string | null | undefined) => {
@@ -38,15 +38,15 @@ export function LogHistoryViewer({ logId }: LogHistoryViewerProps) {
     : "Недавно"
 
   return (
-    <div className="space-y-1 border-t border-brand-muted/15 pt-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-brand-muted">
+    <div className="space-y-1 border-t border-app-surface pt-2">
+      <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
         <UserRound className="h-3 w-3" />
         <span>
           Изменил: {lastChange?.changed_by_name || "—"}
           {lastChange?.changed_by_role ? ` (${roleLabel(lastChange.changed_by_role)})` : ""}
         </span>
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-brand-muted">
+      <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
         <Clock3 className="h-3 w-3" />
         <span>Когда: {formattedDate}</span>
       </div>

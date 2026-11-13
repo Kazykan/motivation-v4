@@ -44,11 +44,11 @@ export function ChildLogStatusEditor({
   }
 
   return (
-    <div className="animate-in slide-in-from-bottom-2 space-y-3 rounded-xl border border-brand-muted/20 bg-card p-3 shadow-sm duration-200">
+    <div className="animate-in slide-in-from-bottom-2 space-y-3 rounded-xl border border-app-surface bg-app-card p-3 shadow-sm duration-200">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-brand-dark">Статус выполнения</p>
-          <p className="text-xs text-brand-muted">{formatLongDay(date)}</p>
+          <p className="text-sm font-semibold text-text-main">Статус выполнения</p>
+          <p className="text-xs text-text-muted">{formatLongDay(date)}</p>
         </div>
         <Button
           type="button"
@@ -64,29 +64,29 @@ export function ChildLogStatusEditor({
       </div>
 
       {weekClosed && (
-        <div className="rounded-lg border border-brand-success bg-brand-success-soft p-2 text-[11px] text-brand-success-strong">
+        <div className="rounded-lg border border-finance-positive/30 bg-finance-positive/10 p-2 text-[11px] text-finance-positive">
           Неделя закрыта и выплачена. Изменять отметки нельзя.
         </div>
       )}
 
       {/* Подсказка по текущему состоянию */}
       {isNeutral && !weekClosed && (
-        <div className="rounded-lg border border-brand-muted/20 bg-brand-surface-alt p-2 text-[11px] text-brand-muted">
+        <div className="rounded-lg border border-app-surface bg-app-surface p-2 text-[11px] text-text-muted">
           День не отмечен. Отметьте выполнение — родитель увидит его на проверке.
         </div>
       )}
       {isCancelled && !weekClosed && (
-        <div className="rounded-lg border border-brand-muted/20 bg-brand-surface-alt p-2 text-[11px] text-brand-muted">
+        <div className="rounded-lg border border-app-surface bg-app-surface p-2 text-[11px] text-text-muted">
           Отметка отменена. День считается неотмеченным, но история сохранена.
         </div>
       )}
       {isApproved && (
-        <div className="rounded-lg border border-brand-success bg-brand-success-soft p-2 text-[11px] text-brand-success-strong">
+        <div className="rounded-lg border border-finance-positive/30 bg-finance-positive/10 p-2 text-[11px] text-finance-positive">
           Родитель подтвердил выполнение. Изменить нельзя.
         </div>
       )}
       {isRejected && !weekClosed && (
-        <div className="rounded-lg border border-brand-error/30 bg-brand-error-soft p-2 text-[11px] text-brand-error-strong">
+        <div className="rounded-lg border border-finance-negative/30 bg-finance-negative/10 p-2 text-[11px] text-finance-negative">
           Родитель отклонил отметку. Можно отметить снова.
         </div>
       )}
@@ -102,11 +102,11 @@ export function ChildLogStatusEditor({
             "flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-xl border-2 p-2 transition-all",
             "disabled:cursor-not-allowed disabled:opacity-60",
             isDone
-              ? "border-brand-warning bg-brand-warning-soft text-brand-warning-strong"
-              : "border-border bg-background text-brand-muted hover:bg-brand-surface-alt",
+              ? "border-finance-pending/40 bg-finance-pending/10 text-finance-pending"
+              : "border-app-surface bg-app-bg text-text-muted hover:bg-app-surface",
           )}
         >
-          <Clock3 className={cn("h-5 w-5", isDone ? "text-brand-warning" : "text-brand-muted")} />
+          <Clock3 className={cn("h-5 w-5", isDone ? "text-finance-pending" : "text-text-muted")} />
           <span className="text-center text-xs font-semibold leading-tight">
             {isDone ? "Ожидает родителя" : "Выполнено"}
           </span>
@@ -121,8 +121,8 @@ export function ChildLogStatusEditor({
             "flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-xl border-2 p-2 transition-all",
             "disabled:cursor-not-allowed disabled:opacity-60",
             isCancelled
-              ? "border-brand-muted/40 bg-brand-surface-alt text-brand-muted"
-              : "border-border bg-background text-brand-muted hover:bg-brand-surface-alt",
+              ? "border-app-surface bg-app-surface text-text-muted"
+              : "border-app-surface bg-app-bg text-text-muted hover:bg-app-surface",
           )}
         >
           <RotateCcw className="h-5 w-5" />
@@ -133,16 +133,16 @@ export function ChildLogStatusEditor({
       </div>
 
       {isApproved && (
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-brand-success-strong">
+        <div className="flex items-center justify-center gap-1.5 text-[11px] text-finance-positive">
           <Check className="h-3.5 w-3.5" />
           Подтверждено родителем
         </div>
       )}
 
-      {saving && <p className="text-center text-xs text-brand-muted">Сохранение...</p>}
+      {saving && <p className="text-center text-xs text-text-muted">Сохранение...</p>}
 
       {error && (
-        <p role="alert" className="text-xs text-brand-error">
+        <p role="alert" className="text-xs text-finance-negative">
           {error}
         </p>
       )}
@@ -152,7 +152,7 @@ export function ChildLogStatusEditor({
       {logId && logId > 0 ? (
         <LogHistoryViewer logId={logId} />
       ) : (
-        <div className="text-xs text-brand-muted">Изменений пока нет</div>
+        <div className="text-xs text-text-muted">Изменений пока нет</div>
       )}
     </div>
   )

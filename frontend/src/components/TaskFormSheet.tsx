@@ -220,21 +220,21 @@ export function TaskFormSheet({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="fixed bottom-0 top-auto left-1/2 w-full max-w-md -translate-x-1/2 translate-y-0 overflow-y-auto rounded-t-3xl rounded-b-none border-none bg-brand-surface p-5 shadow-2xl sm:max-w-md max-h-[90vh]">
+      <DialogContent className="fixed bottom-0 top-auto left-1/2 w-full max-w-md -translate-x-1/2 translate-y-0 overflow-y-auto rounded-t-3xl rounded-b-none border-none bg-app-surface p-5 shadow-2xl sm:max-w-md max-h-[90vh]">
         <DialogHeader className="pb-1 text-left">
-          <DialogTitle className="text-base font-bold text-brand-dark">
+          <DialogTitle className="text-base font-bold text-text-main">
             {taskToEdit ? "Редактировать задание" : "Создать задание"}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 py-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-brand-muted">Ребенок</label>
+            <label className="text-xs font-medium text-text-muted">Ребенок</label>
             <select
               value={childId}
               onChange={(e) => setChildId(e.target.value)}
               required
-              className="h-11 rounded-xl border-none bg-white px-3 text-sm text-brand-dark shadow-none outline-none"
+              className="h-11 rounded-xl border-none bg-app-card px-3 text-sm text-text-main shadow-none outline-none"
             >
               <option value="" disabled>
                 Выберите ребенка
@@ -248,28 +248,28 @@ export function TaskFormSheet({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-brand-muted">Название задачи</label>
+            <label className="text-xs font-medium text-text-muted">Название задачи</label>
             <Input
               placeholder="Например, Уборка комнаты"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              className="h-11 rounded-xl border-none bg-white text-sm shadow-none"
+              className="h-11 rounded-xl border-none bg-app-card text-sm shadow-none"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-brand-muted">Описание</label>
+            <label className="text-xs font-medium text-text-muted">Описание</label>
             <Input
               placeholder="Подробное описание..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="h-11 rounded-xl border-none bg-white text-sm shadow-none"
+              className="h-11 rounded-xl border-none bg-app-card text-sm shadow-none"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-brand-muted">Стоимость за неделю (₽)</label>
+            <label className="text-xs font-medium text-text-muted">Стоимость за неделю (₽)</label>
             <Input
               type="number"
               step="0.01"
@@ -277,20 +277,20 @@ export function TaskFormSheet({
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               required
-              className="h-11 rounded-xl border-none bg-white text-sm shadow-none"
+              className="h-11 rounded-xl border-none bg-app-card text-sm shadow-none"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-brand-muted">Тип расписания</label>
-            <div className="flex rounded-xl bg-brand-surface-alt p-1">
+            <label className="text-xs font-medium text-text-muted">Тип расписания</label>
+            <div className="flex rounded-xl bg-app-surface p-1">
               <button
                 type="button"
                 className={cn(
                   "flex-1 rounded-lg py-2 text-xs font-semibold transition-all",
                   scheduleType === "FIXED"
-                    ? "bg-brand-dark text-white shadow-sm"
-                    : "text-brand-muted",
+                    ? "bg-brand-action text-brand-action-text shadow-sm"
+                    : "text-text-muted",
                 )}
                 onClick={() => setScheduleType("FIXED")}
               >
@@ -301,8 +301,8 @@ export function TaskFormSheet({
                 className={cn(
                   "flex-1 rounded-lg py-2 text-xs font-semibold transition-all",
                   scheduleType === "FLEXIBLE"
-                    ? "bg-brand-dark text-white shadow-sm"
-                    : "text-brand-muted",
+                    ? "bg-brand-action text-brand-action-text shadow-sm"
+                    : "text-text-muted",
                 )}
                 onClick={() => setScheduleType("FLEXIBLE")}
               >
@@ -313,7 +313,7 @@ export function TaskFormSheet({
 
           {scheduleType === "FIXED" ? (
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-brand-muted">Дни недели</label>
+              <label className="text-xs font-medium text-text-muted">Дни недели</label>
               <div className="flex justify-between gap-1">
                 {DAYS_OF_WEEK.map((day) => {
                   const isSelected = selectedDays.includes(day.id)
@@ -325,8 +325,8 @@ export function TaskFormSheet({
                       className={cn(
                         "flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold transition-all",
                         isSelected
-                          ? "bg-brand-primary text-brand-dark shadow-sm"
-                          : "bg-white text-brand-muted hover:bg-brand-surface-alt",
+                          ? "bg-brand-action text-brand-action-text shadow-sm"
+                          : "bg-app-card text-text-muted hover:bg-app-surface",
                       )}
                     >
                       {day.label}
@@ -337,22 +337,22 @@ export function TaskFormSheet({
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-brand-muted">Количество выполнений</label>
-              <div className="flex h-11 items-center rounded-xl bg-white px-3 shadow-none">
+              <label className="text-xs font-medium text-text-muted">Количество выполнений</label>
+              <div className="flex h-11 items-center rounded-xl bg-app-card px-3 shadow-none">
                 <button
                   type="button"
-                  className="h-8 px-2 text-lg font-medium text-brand-muted hover:text-brand-dark disabled:opacity-20"
+                  className="h-8 px-2 text-lg font-medium text-text-muted hover:text-text-main disabled:opacity-20"
                   onClick={() => setCount((prev) => Math.max(1, prev - 1))}
                   disabled={count <= 1}
                 >
                   –
                 </button>
-                <div className="flex-1 text-center text-sm font-semibold text-brand-dark">
+                <div className="flex-1 text-center text-sm font-semibold text-text-main">
                   {count}
                 </div>
                 <button
                   type="button"
-                  className="h-8 px-2 text-lg font-medium text-brand-muted hover:text-brand-dark disabled:opacity-20"
+                  className="h-8 px-2 text-lg font-medium text-text-muted hover:text-text-main disabled:opacity-20"
                   onClick={() => setCount((prev) => Math.min(7, prev + 1))}
                   disabled={count >= 7}
                 >
@@ -363,7 +363,7 @@ export function TaskFormSheet({
           )}
 
           <div className="flex items-center justify-between px-1 pt-1">
-            <label className="text-xs font-medium text-brand-muted">Активно</label>
+            <label className="text-xs font-medium text-text-muted">Активно</label>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
 
@@ -373,7 +373,7 @@ export function TaskFormSheet({
             <Button
               type="submit"
               disabled={loading}
-              className="h-12 w-full rounded-xl bg-brand-primary text-base font-semibold text-brand-dark shadow-sm hover:bg-brand-primary-hover"
+              className="h-12 w-full rounded-xl bg-brand-action text-base font-semibold text-brand-action-text shadow-sm hover:bg-brand-action-hover"
             >
               {loading ? "Сохранение..." : "Сохранить"}
             </Button>

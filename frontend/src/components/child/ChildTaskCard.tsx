@@ -75,25 +75,28 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
   }
 
   return (
-    <div className="rounded-[24px] bg-[#1A1A1A] p-5 text-white shadow-lg flex flex-col gap-4">
+    <div className="rounded-card bg-app-card p-5 text-text-main shadow-lg flex flex-col gap-4">
       <CardContent className="space-y-4 p-0">
         {/* Шапка */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex flex-col gap-1">
-            <h3 className="text-lg font-bold text-white leading-tight truncate" title={item.title}>
+            <h3
+              className="text-lg font-bold text-text-main leading-tight truncate"
+              title={item.title}
+            >
               {item.title}
             </h3>
             {item.description && (
-              <p className="text-sm text-gray-400 line-clamp-2">{item.description}</p>
+              <p className="text-sm text-text-muted line-clamp-2">{item.description}</p>
             )}
 
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[11px] text-gray-400">
+              <span className="text-[11px] text-text-muted">
                 {isFlexible
                   ? `${approvedCount} из ${targetCount} выполнено`
                   : `План: ${scheduledDays.length} дн.`}
               </span>
-              <span className="rounded-full bg-green-600/20 px-2 py-0.5 text-[11px] font-semibold text-green-400">
+              <span className="rounded-full bg-finance-positive/10 px-2 py-0.5 text-[11px] font-semibold text-finance-positive">
                 +{formatMoney(pricePerRun)} за раз
               </span>
             </div>
@@ -101,20 +104,20 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
 
           {/* Финансовый виджет — детские формулировки */}
           <div className="text-right shrink-0 flex flex-col gap-0.5 tabular-nums">
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">
+            <div className="text-[10px] uppercase tracking-wide text-text-muted">
               Можно заработать
             </div>
-            <div className="text-lg font-bold text-white leading-tight">
+            <div className="text-lg font-bold text-text-main leading-tight">
               {formatMoney(canEarnAmount)}
             </div>
 
             <div className="mt-1 flex flex-col gap-0.5 text-[12px] leading-tight">
-              <span className="flex items-center justify-end gap-1 text-green-400">
+              <span className="flex items-center justify-end gap-1 text-finance-positive">
                 <Check className="h-3 w-3 stroke-[2.5]" />
                 {formatMoney(approvedAmount)} заработано
               </span>
               {pendingAmount > 0 && (
-                <span className="flex items-center justify-end gap-1 text-amber-400">
+                <span className="flex items-center justify-end gap-1 text-finance-pending">
                   <Clock3 className="h-3 w-3" />
                   {formatMoney(pendingAmount)} ждёт проверки
                 </span>
@@ -124,10 +127,10 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
         </div>
 
         {/* Календарь */}
-        <div className="space-y-2 rounded-[16px] bg-[#222222] p-3.5">
+        <div className="space-y-2 rounded-button bg-app-surface p-3.5">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-200">Расписание недели</span>
-            <span className="text-[11px] text-gray-500">
+            <span className="text-sm font-semibold text-text-main">Расписание недели</span>
+            <span className="text-[11px] text-text-muted">
               {item.weekStart} — {item.weekEnd}
             </span>
           </div>
@@ -164,27 +167,30 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
                   title={ariaLabel}
                   aria-label={ariaLabel}
                   className={cn(
-                    "relative flex flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-green-500",
+                    "relative flex flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-brand-action",
                     (!isClickable || weekClosed) && "cursor-not-allowed opacity-30",
                   )}
                 >
-                  <span className="text-[10px] font-medium text-gray-500">
+                  <span className="text-[10px] font-medium text-text-muted">
                     {WEEK_DAYS_SHORT[index]}
                   </span>
 
                   <div
                     className={cn(
                       "flex aspect-square w-full items-center justify-center rounded-xl border text-sm font-semibold transition-all",
-                      isApproved && "border-[#2E5A45] bg-[#1E3A2F] text-green-500",
-                      isPending && "border-[#5C4D2B] bg-[#3D331C] text-yellow-500",
-                      isRejected && "border-[#5C2B2B] bg-[#3D1C1C] text-red-500",
-                      isCancelled && "border-[#333] bg-[#2A2A2A] text-gray-500",
+                      isApproved &&
+                        "border-finance-positive/30 bg-finance-positive/10 text-finance-positive",
+                      isPending &&
+                        "border-finance-pending/40 bg-finance-pending/10 text-finance-pending",
+                      isRejected &&
+                        "border-finance-negative/30 bg-finance-negative/10 text-finance-negative",
+                      isCancelled && "border-app-surface bg-app-surface text-text-muted",
                       status === "NONE" &&
                         isClickable &&
-                        "border-[#333] bg-[#2A2A2A] text-gray-300 hover:bg-[#383838] hover:text-white",
-                      !isClickable && "border-transparent bg-transparent text-gray-600",
+                        "border-app-surface bg-app-bg text-text-main hover:bg-app-surface",
+                      !isClickable && "border-transparent bg-transparent text-text-muted",
                       selectedCell?.date === iso &&
-                        "ring-2 ring-green-500 ring-offset-2 ring-offset-[#222222]",
+                        "ring-2 ring-brand-action ring-offset-2 ring-offset-app-card",
                     )}
                   >
                     {isApproved ? (
@@ -207,13 +213,13 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
 
         {/* Обратная связь после клика */}
         {flash && (
-          <div className="rounded-xl border border-green-800 bg-green-900/30 p-2.5 text-center text-[12px] font-medium text-green-400">
+          <div className="rounded-xl border border-finance-positive/30 bg-finance-positive/10 p-2.5 text-center text-[12px] font-medium text-finance-positive">
             {flash}
           </div>
         )}
 
         {weekClosed && (
-          <div className="rounded-xl border border-green-800 bg-green-900/30 p-3 text-[11px] text-green-400">
+          <div className="rounded-xl border border-finance-positive/30 bg-finance-positive/10 p-3 text-[11px] text-finance-positive">
             Неделя закрыта. Изменять отметки нельзя.
           </div>
         )}

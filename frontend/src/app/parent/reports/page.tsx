@@ -75,13 +75,13 @@ export default function ParentReportsPage() {
   }
 
   if (!ready) {
-    return <div className="py-12 text-center text-sm text-brand-muted">Загрузка...</div>
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
   }
 
   return (
     <div className="flex flex-col gap-6 pb-20">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-brand-dark">Недельные отчеты</h1>
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Недельные отчеты</h1>
       </div>
 
       <WeekNavigator
@@ -98,8 +98,8 @@ export default function ParentReportsPage() {
           onClick={() => setSelectedChildId(null)}
           className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
             selectedChildId === null
-              ? "bg-brand-dark text-white shadow-xs"
-              : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt"
+              ? "bg-brand-primary text-brand-dark shadow-xs"
+              : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface"
           }`}
         >
           Все дети
@@ -111,8 +111,8 @@ export default function ParentReportsPage() {
             onClick={() => setSelectedChildId(child.id)}
             className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
               selectedChildId === child.id
-                ? "bg-brand-dark text-white shadow-xs"
-                : "border border-brand-muted/20 bg-white text-brand-muted hover:bg-brand-surface-alt"
+                ? "bg-brand-primary text-brand-dark shadow-xs"
+                : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface"
             }`}
           >
             {child.first_name || child.name}
@@ -121,9 +121,9 @@ export default function ParentReportsPage() {
       </div>
 
       {loading ? (
-        <div className="py-12 text-center text-sm text-brand-muted">Загрузка отчетов...</div>
+        <div className="py-12 text-center text-sm text-text-muted">Загрузка отчетов...</div>
       ) : reports.length === 0 ? (
-        <div className="py-12 text-center text-sm text-brand-muted">Нет доступных отчетов</div>
+        <div className="py-12 text-center text-sm text-text-muted">Нет доступных отчетов</div>
       ) : (
         <div className="flex flex-col gap-4">
           {reports.map((report) => {
@@ -134,19 +134,19 @@ export default function ParentReportsPage() {
             return (
               <Card
                 key={`${report.child}-${report.start_date}`}
-                className="border-brand-muted/20 shadow-sm"
+                className="border-app-surface bg-app-card shadow-sm"
               >
-                <CardHeader className="border-b border-brand-muted/15 pb-3">
+                <CardHeader className="border-b border-app-surface pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary-soft font-bold text-brand-warning-strong">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary-soft font-bold text-finance-pending">
                         {(childInfo?.first_name || childInfo?.name || "Р")?.[0]}
                       </div>
                       <div className="flex flex-col">
-                        <CardTitle className="text-sm font-semibold text-brand-dark">
+                        <CardTitle className="text-sm font-semibold text-text-main">
                           {childInfo?.first_name || childInfo?.name || "Ребенок"}
                         </CardTitle>
-                        <span className="text-xs text-brand-muted">
+                        <span className="text-xs text-text-muted">
                           Период: {report.start_date} – {report.end_date}
                         </span>
                       </div>
@@ -154,8 +154,8 @@ export default function ParentReportsPage() {
                     <Badge
                       className={
                         isClosed
-                          ? "bg-brand-success-soft text-brand-success-strong"
-                          : "bg-brand-warning-soft text-brand-warning-strong"
+                          ? "bg-finance-positive/10 text-finance-positive"
+                          : "bg-finance-pending/10 text-finance-pending"
                       }
                     >
                       {isClosed ? "Выплачено" : "Ждет проверки"}
@@ -165,20 +165,18 @@ export default function ParentReportsPage() {
                 <CardContent className="flex flex-col gap-4 pt-4">
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className="flex flex-col">
-                      <span className="text-brand-muted">Заработано</span>
-                      <span className="font-bold text-brand-dark">
-                        {report.calculated_amount} ₽
-                      </span>
+                      <span className="text-text-muted">Заработано</span>
+                      <span className="font-bold text-text-main">{report.calculated_amount} ₽</span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-brand-muted">Корректировка</span>
-                      <span className="font-bold text-brand-success">
+                      <span className="text-text-muted">Корректировка</span>
+                      <span className="font-bold text-finance-positive">
                         +{report.manual_adjustment} ₽
                       </span>
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-brand-muted">Итого к выплате</span>
-                      <span className="font-extrabold text-brand-dark">{report.final_sum} ₽</span>
+                      <span className="text-text-muted">Итого к выплате</span>
+                      <span className="font-extrabold text-text-main">{report.final_sum} ₽</span>
                     </div>
                   </div>
 
@@ -186,7 +184,7 @@ export default function ParentReportsPage() {
                     <div className="flex flex-col gap-2 pt-2">
                       <Button
                         variant="outline"
-                        className="w-full cursor-pointer border-brand-warning/40 bg-brand-warning-soft/50 text-brand-warning-strong hover:bg-brand-warning-soft"
+                        className="w-full cursor-pointer border-finance-pending/40 bg-finance-pending/5 text-finance-pending hover:bg-finance-pending/10"
                         onClick={() => goToReview(report.child, report.start_date)}
                       >
                         <AlertCircle className="mr-2 h-4 w-4" />
