@@ -1,6 +1,7 @@
 "use client"
 
 import { useMe } from "@/hooks/useMe"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { LogOut, User } from "lucide-react"
@@ -29,9 +30,12 @@ export default function ParentProfilePage() {
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-text-main">
-                {[me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Родитель"}
-              </h2>
+              <Avatar className="h-16 w-16">
+                <AvatarImage src={me?.avatar_url ?? undefined} />
+                <AvatarFallback className="bg-brand-primary-soft text-brand-warning-strong text-lg">
+                  {(me?.first_name || "?").slice(0, 1)}
+                </AvatarFallback>
+              </Avatar>
               <Badge
                 variant="secondary"
                 className="bg-brand-primary-soft text-brand-warning-strong"

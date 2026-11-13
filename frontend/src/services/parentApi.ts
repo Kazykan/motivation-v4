@@ -47,7 +47,7 @@ export const parentApi = {
     return res.data
   },
 
-  async createTaskLog(data: { task: number; date: string; status: LogStatusValue  }) {
+  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
     const res = await api.post("/api/task-logs", data)
     return res.data
   },
@@ -119,5 +119,10 @@ export const parentApi = {
       expires_at: string
       is_used: boolean
     }
+  },
+
+  async getFamilyMembers() {
+    const res = await api.get("/api/family/members")
+    return res.data
   },
 }

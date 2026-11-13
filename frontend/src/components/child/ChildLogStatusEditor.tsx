@@ -4,10 +4,10 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
-import { Check, Clock3, RotateCcw, X } from "lucide-react"
+import { Check, Clock3, RotateCcw, X, AlertTriangle } from "lucide-react"
 import { LogHistoryViewer } from "@/components/LogHistoryViewer"
 import { ChildLogStatusEditorProps } from "@/types/props"
-import { formatLongDay } from "@/lib/dates"
+import { formatLongDay, formatDateISO } from "@/lib/dates"
 
 export function ChildLogStatusEditor({
   logId,
@@ -21,7 +21,11 @@ export function ChildLogStatusEditor({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const disabled = saving || weekClosed
+  const isFuture = date > formatDateISO(new Date())
+  const isLockedByWeek = weekClosed
+  const isLockedByDate = isFuture
+
+  const disabled = saving || isLockedByWeek || isLockedByDate
 
   const isNeutral = status === "NONE"
   const isDone = status === "DONE"
@@ -30,6 +34,7 @@ export function ChildLogStatusEditor({
   const isCancelled = status === "CANCELLED"
 
   const run = async (fn: () => Promise<void>) => {
+    if (disabled) return
     setSaving(true)
     setError(null)
     try {
@@ -63,71 +68,128 @@ export function ChildLogStatusEditor({
         </Button>
       </div>
 
-      {weekClosed && (
+      {/* ── Блок предупреждений ── */}
+
+      {isLockedByDate && (
+        <div className="flex items-start gap-2 rounded-lg border border-finance-negative/40 bg-finance-negative/10 p-2.5 text-[11px] text-finance-negative">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="font-medium leading-snug">
+            Нельзя отмечать будущее. Этот день ещё не наступил.
+          </span>
+        </div>
+      )}
+
+      {isLockedByWeek && (
         <div className="rounded-lg border border-finance-positive/30 bg-finance-positive/10 p-2 text-[11px] text-finance-positive">
           Неделя закрыта и выплачена. Изменять отметки нельзя.
         </div>
       )}
 
-      {/* Подсказка по текущему состоянию */}
-      {isNeutral && !weekClosed && (
+      {!isLockedByDate && !isLockedByWeek && isNeutral && (
         <div className="rounded-lg border border-app-surface bg-app-surface p-2 text-[11px] text-text-muted">
           День не отмечен. Отметьте выполнение — родитель увидит его на проверке.
         </div>
       )}
-      {isCancelled && !weekClosed && (
+
+      {!isLockedByDate && !isLockedByWeek && isCancelled && (
         <div className="rounded-lg border border-app-surface bg-app-surface p-2 text-[11px] text-text-muted">
           Отметка отменена. День считается неотмеченным, но история сохранена.
         </div>
       )}
+
       {isApproved && (
         <div className="rounded-lg border border-finance-positive/30 bg-finance-positive/10 p-2 text-[11px] text-finance-positive">
           Родитель подтвердил выполнение. Изменить нельзя.
         </div>
       )}
-      {isRejected && !weekClosed && (
+
+      {!isLockedByDate && !isLockedByWeek && isRejected && (
         <div className="rounded-lg border border-finance-negative/30 bg-finance-negative/10 p-2 text-[11px] text-finance-negative">
           Родитель отклонил отметку. Можно отметить снова.
         </div>
       )}
 
-      {/* Действия */}
+      {/* ── Действия ── */}
+
       <div className="grid grid-cols-2 gap-2">
+        {/* Выполнено / Ждёт проверки */}
         <button
           type="button"
           disabled={disabled || isDone || isApproved}
           onClick={() => run(() => onMarkDone(logId, date))}
           aria-pressed={isDone}
+          aria-disabled={disabled || isDone || isApproved}
           className={cn(
             "flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-xl border-2 p-2 transition-all",
-            "disabled:cursor-not-allowed disabled:opacity-60",
-            isDone
-              ? "border-finance-pending/40 bg-finance-pending/10 text-finance-pending"
-              : "border-app-surface bg-app-bg text-text-muted hover:bg-app-surface",
+            "disabled:cursor-not-allowed",
+            // активный / выбранный статус DONE
+            isDone &&
+              !disabled &&
+              "border-finance-pending/40 bg-finance-pending/10 text-finance-pending",
+            isDone && disabled && "border-app-surface bg-app-surface text-text-muted/60",
+            // недоступно (future/week closed/approved) — серое
+            disabled && !isDone && "border-app-surface bg-app-surface text-text-muted/50",
+            // доступно к нажатию
+            !disabled &&
+              !isDone &&
+              !isApproved &&
+              "border-finance-pending/40 bg-app-bg text-finance-pending hover:bg-finance-pending/5",
+            // уже подтверждено — серая
+            isApproved && "border-app-surface bg-app-surface text-text-muted/50",
           )}
         >
-          <Clock3 className={cn("h-5 w-5", isDone ? "text-finance-pending" : "text-text-muted")} />
+          <Clock3
+            className={cn(
+              "h-5 w-5",
+              isDone && !disabled && "text-finance-pending",
+              !isDone && !disabled && !isApproved && "text-finance-pending",
+              (disabled || isApproved) && "text-text-muted/50",
+            )}
+          />
           <span className="text-center text-xs font-semibold leading-tight">
-            {isDone ? "Ожидает родителя" : "Выполнено"}
+            {isDone ? "Ждёт проверки" : isApproved ? "Проверено" : "Выполнено"}
           </span>
+          {isDone && !disabled && (
+            <span className="text-[9px] font-medium opacity-80">Нажмите, чтобы отменить</span>
+          )}
         </button>
 
+        {/* Отменить отметку / Отменено */}
         <button
           type="button"
           disabled={disabled || isNeutral || isApproved || isCancelled}
           onClick={() => logId && run(() => onCancel(logId))}
           aria-pressed={isCancelled}
+          aria-disabled={disabled || isNeutral || isApproved || isCancelled}
           className={cn(
             "flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-xl border-2 p-2 transition-all",
-            "disabled:cursor-not-allowed disabled:opacity-60",
-            isCancelled
-              ? "border-app-surface bg-app-surface text-text-muted"
-              : "border-app-surface bg-app-bg text-text-muted hover:bg-app-surface",
+            "disabled:cursor-not-allowed",
+            // активный статус CANCELLED
+            isCancelled && "border-app-surface bg-app-surface text-text-muted",
+            // заблокировано (future/week closed/approved/neutral)
+            disabled && !isCancelled && "border-app-surface bg-app-surface text-text-muted/50",
+            // доступно к нажатию — красный акцент, явно живая
+            !disabled &&
+              !isNeutral &&
+              !isApproved &&
+              !isCancelled &&
+              "border-finance-negative/40 bg-app-bg text-finance-negative hover:bg-finance-negative/5",
           )}
         >
-          <RotateCcw className="h-5 w-5" />
+          {isCancelled ? (
+            <RotateCcw className="h-5 w-5 text-text-muted" />
+          ) : (
+            <X
+              className={cn(
+                "h-5 w-5",
+                !disabled && !isNeutral && !isApproved
+                  ? "text-finance-negative"
+                  : "text-text-muted/50",
+              )}
+            />
+          )}
           <span className="text-center text-xs font-semibold leading-tight">
-            {isCancelled ? "Отменено" : "Вернуть как было"}
+            {isCancelled ? "Отменено" : "Отменить отметку"}
           </span>
         </button>
       </div>

@@ -148,6 +148,16 @@ class TaskLogSerializer(serializers.ModelSerializer):
         fields = ("id", "task", "date", "status", "earned_amount", "updated_by_parent")
         read_only_fields = ("id", "earned_amount", "updated_by_parent", "status")
 
+    def validate_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError("Нельзя отмечать будущие дни.")
+        return value
+
+    def update(self, instance, validated_data):
+        # Через PATCH запрещаем менять дату — только статус.
+        validated_data.pop("date", None)
+        return super().update(instance, validated_data)
+
 
 class WeeklyReportSerializer(serializers.ModelSerializer):
     final_sum = serializers.ReadOnlyField()
@@ -174,6 +184,7 @@ class WeeklyReportSerializer(serializers.ModelSerializer):
 class TaskLogHistorySerializer(serializers.ModelSerializer):
     changed_by_name = serializers.SerializerMethodField()
     changed_by_role = serializers.SerializerMethodField()
+    changed_by_avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = TaskLogHistory
@@ -183,6 +194,7 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
             "new_status",
             "changed_by_name",
             "changed_by_role",
+            "changed_by_avatar",
             "changed_at",
         )
 
@@ -195,3 +207,8 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         if not obj.changed_by:
             return None
         return getattr(obj.changed_by, "role", None) or None
+
+    def get_changed_by_avatar(self, obj):
+        if not obj.changed_by:
+            return None
+        return obj.changed_by.avatar_url or None

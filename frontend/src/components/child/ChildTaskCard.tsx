@@ -49,6 +49,8 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
   const pendingAmount = pendingCount * pricePerRun
   const canEarnAmount = Number(item.weeklyPrice)
 
+  const todayIso = formatDateISO(new Date())
+
   const getDayState = (date: Date) => {
     const iso = formatDateISO(date)
     const log = logs.find((l) => l.date === iso)
@@ -102,7 +104,6 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
             </div>
           </div>
 
-          {/* Финансовый виджет — детские формулировки */}
           <div className="text-right shrink-0 flex flex-col gap-0.5 tabular-nums">
             <div className="text-[10px] uppercase tracking-wide text-text-muted">
               Можно заработать
@@ -145,30 +146,35 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
               const isRejected = status === "REJECTED"
               const isCancelled = status === "CANCELLED"
               const hasLog = !!log
-              const isClickable = isFlexible || isScheduled || hasLog
+              const isFuture = iso > todayIso
+              const inSchedule = isFlexible || isScheduled || hasLog
+
+              // День кликабелен всегда, кроме закрытой недели.
+              // Внутри редактора отдельно решается, можно ли действие.
+              const isClickable = !weekClosed
 
               let ariaLabel = `${WEEK_DAYS_SHORT[index]}, ${date.getDate()}`
-              if (isApproved) ariaLabel += " — подтверждено"
-              else if (isPending) ariaLabel += " — ожидает родителя"
+              if (isFuture) ariaLabel += " — будущее, отметить нельзя"
+              else if (isApproved) ariaLabel += " — подтверждено"
+              else if (isPending) ariaLabel += " — ждёт проверки"
               else if (isRejected) ariaLabel += " — отклонено"
               else if (isCancelled) ariaLabel += " — отменено"
               else if (isScheduled) ariaLabel += " — запланировано"
+              else if (!inSchedule) ariaLabel += " — вне расписания"
 
               return (
                 <button
                   key={iso}
                   type="button"
-                  disabled={!isClickable || weekClosed}
+                  disabled={!isClickable}
                   onClick={() =>
-                    isClickable &&
-                    !weekClosed &&
-                    setSelectedCell({ logId: log?.id ?? null, date: iso, status })
+                    isClickable && setSelectedCell({ logId: log?.id ?? null, date: iso, status })
                   }
                   title={ariaLabel}
                   aria-label={ariaLabel}
                   className={cn(
                     "relative flex flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-brand-action",
-                    (!isClickable || weekClosed) && "cursor-not-allowed opacity-30",
+                    weekClosed && "cursor-not-allowed opacity-40",
                   )}
                 >
                   <span className="text-[10px] font-medium text-text-muted">
@@ -178,6 +184,7 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
                   <div
                     className={cn(
                       "flex aspect-square w-full items-center justify-center rounded-xl border text-sm font-semibold transition-all",
+                      // ── статусы (приоритет) ──
                       isApproved &&
                         "border-finance-positive/30 bg-finance-positive/10 text-finance-positive",
                       isPending &&
@@ -185,10 +192,20 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
                       isRejected &&
                         "border-finance-negative/30 bg-finance-negative/10 text-finance-negative",
                       isCancelled && "border-app-surface bg-app-surface text-text-muted",
+                      // ── будущее: приглушённый вид, но НЕ disabled ──
                       status === "NONE" &&
-                        isClickable &&
+                        isFuture &&
+                        "border-dashed border-app-surface bg-transparent text-text-muted/60",
+                      // ── доступный пустой день ──
+                      status === "NONE" &&
+                        !isFuture &&
+                        inSchedule &&
                         "border-app-surface bg-app-bg text-text-main hover:bg-app-surface",
-                      !isClickable && "border-transparent bg-transparent text-text-muted",
+                      status === "NONE" &&
+                        !isFuture &&
+                        !inSchedule &&
+                        "border-transparent bg-transparent text-text-muted/60",
+                      // ── выбранная ячейка ──
                       selectedCell?.date === iso &&
                         "ring-2 ring-brand-action ring-offset-2 ring-offset-app-card",
                     )}
@@ -225,7 +242,7 @@ export function ChildTaskCard({ item, onChangeStatus }: ChildTaskCardProps) {
         )}
 
         {/* Редактор */}
-        {selectedCell && !weekClosed && (
+        {selectedCell && (
           <ChildLogStatusEditor
             logId={selectedCell.logId}
             date={selectedCell.date}

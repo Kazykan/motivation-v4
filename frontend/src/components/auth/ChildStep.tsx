@@ -4,7 +4,7 @@ import { useState } from "react"
 import { authApi } from "@/services/authApi"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChevronLeft } from "lucide-react"
+import { ChevronLeft, KeyRound } from "lucide-react"
 import { ChildStepProps } from "@/types/props"
 
 export function ChildStep({ onBack, onJoined }: ChildStepProps) {
@@ -55,8 +55,9 @@ export function ChildStep({ onBack, onJoined }: ChildStepProps) {
       <Button
         onClick={join}
         disabled={code.length !== 4 || loading}
-        className="h-12 w-full max-w-xs bg-brand-primary text-brand-dark hover:bg-brand-primary-hover"
+        className="h-11 w-full max-w-xs justify-center gap-2"
       >
+        <KeyRound className="h-4 w-4" />
         {loading ? "Проверяем..." : "Присоединиться"}
       </Button>
 

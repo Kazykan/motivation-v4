@@ -1,6 +1,7 @@
 "use client"
 
 import { Users, Baby } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { RoleStepProps } from "@/types/props"
 
 export function RoleStep({ onSelectParent, onSelectChild }: RoleStepProps) {
@@ -11,34 +12,24 @@ export function RoleStep({ onSelectParent, onSelectChild }: RoleStepProps) {
         <p className="text-sm text-brand-muted">Это поможет настроить приложение под вас</p>
       </div>
 
-      <div className="flex w-full max-w-xs flex-col gap-3">
-        <button
-          type="button"
+      <div className="flex w-full max-w-xs flex-col gap-2">
+        <Button
+          variant="outline"
+          className="h-11 w-full justify-center gap-2"
           onClick={onSelectParent}
-          className="flex items-center gap-3 rounded-2xl border border-brand-muted/20 bg-white p-4 text-left transition-all hover:border-brand-primary hover:bg-brand-primary-soft/50"
         >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-primary-soft text-brand-warning-strong">
-            <Users className="h-6 w-6" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-brand-dark">Я родитель</span>
-            <span className="text-xs text-brand-muted">Создам семью или присоединюсь по коду</span>
-          </div>
-        </button>
+          <Users className="h-4 w-4" />
+          <span>Я родитель</span>
+        </Button>
 
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          className="h-11 w-full justify-center gap-2"
           onClick={onSelectChild}
-          className="flex items-center gap-3 rounded-2xl border border-brand-muted/20 bg-white p-4 text-left transition-all hover:border-brand-primary hover:bg-brand-primary-soft/50"
         >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-success-soft text-brand-success-strong">
-            <Baby className="h-6 w-6" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-brand-dark">Я ребёнок</span>
-            <span className="text-xs text-brand-muted">Введу код от родителя</span>
-          </div>
-        </button>
+          <Baby className="h-4 w-4" />
+          <span>Я ребёнок</span>
+        </Button>
       </div>
     </div>
   )

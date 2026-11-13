@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { parentApi } from "@/services/parentApi"
 import { UserRound, Clock3 } from "lucide-react"
 import { LogHistoryViewerProps, TaskLogHistoryItem } from "@/types/props"
@@ -40,7 +41,12 @@ export function LogHistoryViewer({ logId }: LogHistoryViewerProps) {
   return (
     <div className="space-y-1 border-t border-app-surface pt-2">
       <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
-        <UserRound className="h-3 w-3" />
+        <Avatar className="h-4 w-4">
+          <AvatarImage src={lastChange?.changed_by_avatar ?? undefined} />
+          <AvatarFallback className="text-[8px]">
+            {(lastChange?.changed_by_name || "?").slice(0, 1)}
+          </AvatarFallback>
+        </Avatar>
         <span>
           Изменил: {lastChange?.changed_by_name || "—"}
           {lastChange?.changed_by_role ? ` (${roleLabel(lastChange.changed_by_role)})` : ""}

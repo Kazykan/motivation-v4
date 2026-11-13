@@ -63,6 +63,7 @@ export async function GET(request: Request) {
       email: info.email ?? "",
       first_name: info.given_name ?? "",
       last_name: info.family_name ?? "",
+      avatar_url: info.picture ?? "",
     })
 
     // 4. Сохраняем сессию BFF (Django вернул user payload)

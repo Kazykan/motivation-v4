@@ -1,31 +1,22 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { authApi, MeResponse } from "@/services/authApi"
 
 export function useMe() {
-  const [me, setMe] = useState<MeResponse | null>(null)
-  const [ready, setReady] = useState(false)
+  const {
+    data: me,
+    isLoading,
+    error,
+  } = useQuery<MeResponse>({
+    queryKey: ["me"],
+    queryFn: () => authApi.me(),
+    retry: false, // Не пытаться бесконечно, если 401
+  })
 
-  useEffect(() => {
-    let cancelled = false
-    authApi
-      .me()
-      .then((data) => {
-        if (cancelled) return
-        setMe(data)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setMe(null)
-      })
-      .finally(() => {
-        if (!cancelled) setReady(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return { me, ready }
+  return {
+    me: me ?? null,
+    ready: !isLoading,
+    error,
+  }
 }

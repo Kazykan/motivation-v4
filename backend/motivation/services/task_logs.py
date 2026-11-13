@@ -74,6 +74,11 @@ def recalculate_task_logs_earnings(task, week_start, week_end):
         TaskLog.objects.bulk_update(to_update, ["earned_amount"])
 
 
+def assert_not_future(log_date):
+    if log_date > timezone.localdate():
+        raise ValidationError("Нельзя отмечать будущие дни.")
+
+
 @transaction.atomic
 def change_task_log_status(log_id, new_status, user):
     """
@@ -89,17 +94,21 @@ def change_task_log_status(log_id, new_status, user):
         is_parent = getattr(user, "role", None) == User.Role.PARENT
         if is_child and log.task.child.pk != user.id:
             raise PermissionDenied("Ребёнок не может изменять чужие задания.")
-        if is_child and new_status in (TaskLog.Status.APPROVED, TaskLog.Status.REJECTED):
+        if is_child and new_status in (
+            TaskLog.Status.APPROVED,
+            TaskLog.Status.REJECTED,
+        ):
             raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
         if not is_child and not is_parent:
             raise PermissionDenied("Роль не задана.")
-    
 
     if new_status not in TaskLog.Status.values:
         raise ValueError("Недопустимый статус выполнения.")
 
     if log.status == new_status:
         return log
+
+    assert_not_future(log.date)
 
     assert_week_open(log.task, log.date)
 

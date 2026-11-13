@@ -16,13 +16,14 @@ PROVIDER_FIELDS = {
     "google": "google_id",
     "vk": "vk_id",
     "apple": "apple_id",
+    "telegram": "telegram_id",  # на будущее, сейчас используется в TelegramInitDataAuthentication
 }
 
 
 def _user_payload(user: User, invite_code: str | None = None) -> dict:
     membership = user.family_memberships.select_related("family").first()
     payload = {
-        "id": user.id,
+        "id": user.pk,
         "telegram_id": user.telegram_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
@@ -32,6 +33,7 @@ def _user_payload(user: User, invite_code: str | None = None) -> dict:
         "birth_date": user.birth_date.isoformat() if user.birth_date else None,
         "gender": user.gender or None,
         "family_name": membership.family.name if membership else None,
+        "avatar_url": user.avatar_url or None,  # ← добавить
     }
     if invite_code is not None:
         payload["invite_code"] = invite_code
@@ -46,6 +48,7 @@ class OAuthLoginView(APIView):
     def post(self, request):
         provider = request.data.get("provider")
         provider_user_id = request.data.get("provider_user_id")
+        avatar_url = request.data.get("avatar_url") or None
 
         if provider not in PROVIDER_FIELDS:
             return Response({"detail": "Неизвестный провайдер."}, status=400)
@@ -69,10 +72,16 @@ class OAuthLoginView(APIView):
                 first_name=request.data.get("first_name", ""),
                 last_name=request.data.get("last_name", ""),
                 email=request.data.get("email", ""),
-                role="",  # пустая роль → онбординг
+                avatar_url=avatar_url,
+                role="",
                 **{field: provider_user_id},
             )
             created = True
+        else:
+            # Обновляем аватар, если его ещё нет или пришёл новый
+            if avatar_url and user.avatar_url != avatar_url:
+                user.avatar_url = avatar_url
+                user.save(update_fields=["avatar_url"])
 
         payload = _user_payload(user)
         payload["created"] = created
@@ -84,6 +93,40 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(_user_payload(request.user))
+
+    def patch(self, request):
+        user = request.user
+        allowed = {"first_name", "last_name", "birth_date", "gender", "avatar_url"}
+        update_fields = []
+
+        for field in allowed:
+            if field in request.data:
+                value = request.data[field]
+
+                # Обработка даты рождения
+                if field == "birth_date":
+                    if value == "" or value is None:
+                        value = None
+                    else:
+                        from django.utils.dateparse import parse_date
+
+                        value = parse_date(value)
+                        if value is None:
+                            return Response(
+                                {
+                                    "detail": "Неверный формат даты. Ожидается YYYY-MM-DD."
+                                },
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+
+                setattr(user, field, value)
+                update_fields.append(field)
+
+        if not update_fields:
+            return Response({"detail": "Нет полей для обновления."}, status=400)
+
+        user.save(update_fields=update_fields)
+        return Response(_user_payload(user))
 
 
 class RegisterParentView(APIView):

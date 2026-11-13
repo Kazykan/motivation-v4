@@ -16,7 +16,11 @@ from rest_framework.response import Response
 
 from motivation.models import TaskLog, FamilyMembership
 from motivation.serializers import TaskLogSerializer, TaskLogHistorySerializer
-from motivation.services.task_logs import change_task_log_status, assert_week_open
+from motivation.services.task_logs import (
+    assert_not_future,
+    change_task_log_status,
+    assert_week_open,
+)
 from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
 from .family import _family_child_ids
 
@@ -54,6 +58,9 @@ class TaskLogViewSet(viewsets.ModelViewSet):
         request = cast(DRFRequest, self.request)
         task = serializer.validated_data["task"]
         log_date = serializer.validated_data["date"]
+
+        if log_date is None:
+            raise DRFValidationError({"date": "Поле date обязательно."})
         user = self.request.user
 
         # Авторизация по роли:
@@ -70,6 +77,7 @@ class TaskLogViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied("Роль не задана.")
 
         try:
+            assert_not_future(log_date)
             assert_week_open(task, log_date)
         except DjangoValidationError as e:
             raise DRFValidationError({"detail": e.messages[0]})

@@ -88,13 +88,21 @@ class TelegramInitDataAuthentication(authentication.BaseAuthentication):
         if not tg_user:
             raise exceptions.AuthenticationFailed("В initData нет user.")
 
+        # photo_url есть не всегда: только при открытии через attachment menu и т.п.
+        tg_photo_url = getattr(tg_user, "photo_url", None) or None
+
         user, created = User.objects.get_or_create(
             telegram_id=tg_user.id,
             defaults={
                 "username": f"tg_{tg_user.id}",
                 "first_name": tg_user.first_name or "",
                 "last_name": tg_user.last_name or "",
+                "avatar_url": tg_photo_url,
                 "role": "",  # пустая роль = не онборджен
             },
         )
+        if not created and tg_photo_url and user.avatar_url != tg_photo_url:
+            user.avatar_url = tg_photo_url
+            user.save(update_fields=["avatar_url"])
+
         return (user, None)

@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.utils import timezone
 from django.contrib.auth.models import AbstractUser
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
@@ -490,6 +491,11 @@ class TaskLog(models.Model):
 
         task_title = self.task.title if self.task_id else "Без задания"
         return f"{task_title} — {self.date} — {self.get_status_display()}"
+
+    def clean(self):
+        super().clean()
+        if self.date and self.date > timezone.localdate():
+            raise ValidationError({"date": "Нельзя отмечать будущие дни."})
 
 
 # ----------------------------------------------------------------------

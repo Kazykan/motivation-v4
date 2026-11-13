@@ -13,6 +13,7 @@ export interface ChildCardProps {
     gender?: "MALE" | "FEMALE" | string
     balance: number
     weekly_gain?: number
+    avatar_url?: string | null
   }
   action?: React.ReactNode
 }
@@ -128,6 +129,7 @@ export interface TaskLogHistoryItem {
   new_status: string
   changed_by_name: string
   changed_by_role: string | null
+  changed_by_avatar: string | null
   changed_at: string
 }
 
@@ -190,7 +192,7 @@ export interface WeeklyReportDraft {
 }
 
 // ── Onboarding ──────────────────────────────────────────────
-export type OnboardingStep = "role" | "parent" | "child"
+export type OnboardingStep = "slides" | "role" | "parent" | "child"
 
 export interface OnboardingFlowProps {
   onDone: () => void
@@ -254,4 +256,23 @@ export interface ChildTaskCardProps {
     taskId: number,
     date: string,
   ) => Promise<void>
+}
+
+// ── Onboarding slides ──────────────────────────────────────
+export interface OnboardingSlideProps {
+  data: {
+    src: string
+    alt: string
+    title: string
+    subtitle: string
+  }
+}
+
+export interface OnboardingSlidesProps {
+  onDone: () => void
+}
+
+export interface OnboardingDotsProps {
+  total: number
+  active: number
 }

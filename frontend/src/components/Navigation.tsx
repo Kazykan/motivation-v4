@@ -38,6 +38,9 @@ export function Navigation() {
 
   const currentNav = role === "PARENT" ? parentNav : childNav
 
+  const lastError = useLogSyncStore((s) => s.lastError)
+  const clearError = useLogSyncStore((s) => s.clearError)
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-app-surface bg-app-card/90 backdrop-blur-lg">
       <nav className="relative mx-auto flex max-w-md items-center justify-around px-2 py-2">
@@ -46,6 +49,14 @@ export function Navigation() {
             <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
             Сохранение...
           </div>
+        )}
+        {lastError && (
+          <button
+            onClick={clearError}
+            className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
+          >
+            {lastError}
+          </button>
         )}
 
         {currentNav.map((item) => {

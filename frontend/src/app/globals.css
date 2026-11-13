@@ -9,6 +9,7 @@
  * ТЕМА: маппинг CSS-переменных → Tailwind utility-классы
  * ──────────────────────────────────────────────────────────── */
 @theme inline {
+  --font-display: var(--font-cormorant);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 

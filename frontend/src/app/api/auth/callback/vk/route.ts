@@ -66,6 +66,7 @@ export async function GET(request: Request) {
       email: user.email ?? "",
       first_name: user.first_name ?? "",
       last_name: user.last_name ?? "",
+      avatar_url: user.avatar ?? "",
     })
 
     await setSessionCookie({

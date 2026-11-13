@@ -24,3 +24,15 @@ export function useChildren() {
     createChild: createChildMutation.mutate,
   }
 }
+
+export function useFamilyMembers() {
+  const { data = [], isLoading } = useQuery({
+    queryKey: ["family-members"],
+    queryFn: () => parentApi.getFamilyMembers(),
+  })
+
+  const children = data.filter((u: any) => u.role === "CHILD")
+  const parents = data.filter((u: any) => u.role === "PARENT")
+
+  return { members: data, children, parents, isLoading }
+}

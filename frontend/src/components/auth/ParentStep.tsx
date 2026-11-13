@@ -57,38 +57,28 @@ export function ParentStep({ onBack, onCreated, onJoined }: ParentStepProps) {
         </p>
       </div>
 
-      <div className="flex w-full max-w-xs flex-col gap-3">
-        <Button
-          onClick={createFamily}
-          disabled={loading}
-          className="h-16 justify-start gap-3 rounded-2xl bg-brand-primary px-4 text-left text-brand-dark hover:bg-brand-primary-hover"
-        >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-primary-hover/30">
-            <Plus className="h-5 w-5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold">Создать семью</span>
-            <span className="text-xs opacity-80">Приглашу ребёнка по коду</span>
-          </div>
-        </Button>
-
+      <div className="flex w-full max-w-xs flex-col gap-2">
         {mode === "choose" ? (
-          <Button
-            variant="outline"
-            onClick={() => setMode("enter-code")}
-            disabled={loading}
-            className="h-16 justify-start gap-3 rounded-2xl px-4 text-left"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-surface-alt">
-              <KeyRound className="h-5 w-5 text-brand-muted" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-brand-dark">У меня есть код</span>
-              <span className="text-xs text-brand-muted">
-                Код от второго родителя, который уже создал семью
-              </span>
-            </div>
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={createFamily}
+              disabled={loading}
+              className="h-11 w-full justify-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Создать семью
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => setMode("enter-code")}
+              disabled={loading}
+              className="h-11 w-full justify-center gap-2"
+            >
+              <KeyRound className="h-4 w-4" />У меня есть код
+            </Button>
+          </>
         ) : (
           <div className="flex flex-col gap-2 rounded-2xl border border-brand-muted/20 bg-white p-3">
             <label className="text-xs font-medium text-brand-muted">Код приглашения</label>

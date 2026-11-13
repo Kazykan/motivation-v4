@@ -1,8 +1,10 @@
 from django.db.models import QuerySet
 from rest_framework import viewsets
 
-from motivation.models import User
+from motivation.models import User, FamilyMembership
+from rest_framework.response import Response
 from motivation.serializers import UserSerializer
+from rest_framework.decorators import action
 from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
 from .family import _family_child_ids
 
@@ -26,10 +28,30 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         user = request.user
 
         if getattr(user, "role", None) == User.Role.CHILD:
-            return queryset.filter(id=user.id)
+            return queryset.filter(id=user.pk)
 
         if getattr(user, "role", None) == User.Role.PARENT:
             child_ids = _family_child_ids(user)
             return queryset.filter(id__in=child_ids)
 
         return queryset.none()
+
+    @action(detail=False, methods=["get"], url_path="family-members")
+    def family_members(self, request):
+        """
+        Возвращает всех членов семьи текущего пользователя:
+        и родителей, и детей.
+        """
+        if _is_bff(request) or not _is_authenticated(request):
+            return Response({"detail": "Требуется аутентификация."}, status=403)
+
+        user = request.user
+        family_ids = FamilyMembership.objects.filter(user=user).values_list(
+            "family_id", flat=True
+        )
+        user_ids = FamilyMembership.objects.filter(
+            family_id__in=family_ids
+        ).values_list("user_id", flat=True)
+
+        members = User.objects.filter(id__in=user_ids).distinct()
+        return Response(UserSerializer(members, many=True).data)
