@@ -11,7 +11,7 @@ export interface ChildCardProps {
     age?: number
     birth_date?: string
     gender?: "MALE" | "FEMALE" | string
-    balance: number
+    balance?: number
     weekly_gain?: number
     avatar_url?: string | null
   }
