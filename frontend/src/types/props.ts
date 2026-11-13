@@ -7,10 +7,11 @@ export interface ChildCardProps {
     id: number
     name?: string
     first_name?: string
+    last_name?: string
     username?: string
     age?: number
-    birth_date?: string
-    gender?: "MALE" | "FEMALE" | string
+    birth_date?: string | null
+    gender?: "MALE" | "FEMALE" | string | null
     balance?: number
     weekly_gain?: number
     avatar_url?: string | null
@@ -47,13 +48,14 @@ export interface TaskFormSheetProps {
     title: string
     description: string
     price_per_run: number
+    weekly_price?: number | string
+    target_days?: number[] | string[]
+    target_count?: number
     child_id?: number
     schedule_type?: string
-    days?: string[]
-    count?: number
     is_active?: boolean
   } | null
-  childrenList: Array<{ id: number; name: string }>
+  childrenList: Array<{ id: number; name?: string; first_name?: string }>
   onSubmit: (data: any) => Promise<void>
 }
 

@@ -170,7 +170,7 @@ export default function ParentReviewPage() {
 
         const existingLogIndex = item.logs.findIndex((l) => l.date === date)
         const updatedLogs = [...item.logs]
-        const runs = item.targetCount || item.targetDays.length || 1
+        const runs = item.targetCount || item.targetDays?.length || 1
         const pricePerRun = Number(item.weeklyPrice) / runs
         const oldStatus = existingLogIndex >= 0 ? item.logs[existingLogIndex].status : "NONE"
 

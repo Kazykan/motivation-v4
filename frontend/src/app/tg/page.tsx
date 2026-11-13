@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { authApi, MeResponse } from "@/services/authApi"
 import { OnboardingFlow } from "@/components/auth/OnboardingFlow"
 
-type Phase = "init" | "checking" | "no-auth" | "loading" | "ready" | "error"
+type Phase = "init" | "checking" | "no-auth" | "loading" | "ready"| "onboarding" | "error"
 
 /**
  * Отдельная точка входа для Telegram Mini App (URL указывается в BotFather).

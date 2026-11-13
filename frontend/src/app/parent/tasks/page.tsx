@@ -91,7 +91,7 @@ export default function ParentTasksPage() {
         {children.map((child: any) => {
           const childIdStr = String(child.id)
           const childTasksCount = tasks.filter(
-            (t) => String(t.child) === childIdStr || String(t.child_id) === childIdStr,
+            (t: any) => String(t.child) === childIdStr || String(t.child_id) === childIdStr,
           ).length
 
           return (
@@ -117,9 +117,9 @@ export default function ParentTasksPage() {
         <div className="py-12 text-center text-sm text-text-muted">Нет заданий для отображения</div>
       ) : (
         <div className="flex flex-col gap-3">
-          {tasks.map((task) => {
+          {tasks.map((task: any) => {
             const currentChild = children.find(
-              (c) => String(c.id) === String(task.child || task.child_id),
+              (c: any) => String(c.id) === String(task.child || task.child_id),
             )
             const taskWithChildName = {
               ...task,
