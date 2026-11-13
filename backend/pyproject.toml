@@ -1,4 +1,20 @@
-# pyproject.toml
+[project]
+name = "motivation-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=5.0,<6.0",
+    "djangorestframework",
+    "djangorestframework-simplejwt>=5.3.0",
+    "init-data-py==1.0.1",
+    "psycopg2-binary",
+    "django-cors-headers",
+    "dotenv==0.9.9",
+    "django-stubs==6.1.2",
+    "djangorestframework-stubs==3.18.1",
+    "dj-database-url==3.1.2",
+]
+
 [tool.mypy]
 plugins = ["mypy_django_plugin.main"]
 
