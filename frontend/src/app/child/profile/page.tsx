@@ -184,7 +184,7 @@ export default function ChildProfilePage() {
                       mode="single"
                       selected={editForm.birth_date}
                       onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
-                      initialFocus
+                      autoFocus
                       captionLayout="dropdown"
                       fromYear={2000}
                       toYear={new Date().getFullYear()}
