@@ -22,6 +22,8 @@ const AUTH_ERRORS: Record<string, string> = {
   vk_failed: "Не удалось войти через VK ID. Попробуйте ещё раз.",
 }
 
+type Phase = "init" | "checking" | "no-auth" | "loading" | "ready" | "error"
+
 export default function Home() {
   const router = useRouter()
   const [phase, setPhase] = useState<Phase>("init")
