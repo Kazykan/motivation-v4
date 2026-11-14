@@ -1,18 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { format } from "date-fns"
-import { ru } from "date-fns/locale"
 import {
   Calendar as CalendarIcon,
   LogOut,
-  User,
   Trophy,
   CalendarDays,
   Pencil,
   Check,
   X,
+  AlertTriangle,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -49,6 +49,10 @@ function calcAge(birthDate?: string | null): number | null {
 export default function ChildProfilePage() {
   const { me, ready } = useMe()
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  const requireProfile = searchParams.get("require") === "1"
 
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -73,11 +77,29 @@ export default function ChildProfilePage() {
     mutationFn: (data: any) => authApi.updateMe(data),
     onSuccess: (updatedData) => {
       queryClient.setQueryData(["me"], updatedData)
-      // Инвалидируем запрос, чтобы useMe() подтянул свежие данные при следующем рендере
       queryClient.invalidateQueries({ queryKey: ["me"] })
       setIsEditing(false)
+
+      // Если пришли по требованию — убираем флаг, чтобы баннер исчез.
+      if (requireProfile) {
+        router.replace("/child/profile")
+      }
     },
   })
+
+  // Авто-открытие редактора, если пришли по требованию и поля не заполнены.
+  useEffect(() => {
+    if (!ready || !me) return
+    if (requireProfile && (!me.birth_date || !me.gender)) {
+      setEditForm({
+        first_name: me.first_name || "",
+        last_name: me.last_name || "",
+        birth_date: me.birth_date ? new Date(me.birth_date) : undefined,
+        gender: (me.gender as "MALE" | "FEMALE") || "",
+      })
+      setIsEditing(true)
+    }
+  }, [ready, me, requireProfile])
 
   const handleLogout = async () => {
     await fetch("/bff/auth/logout", { method: "POST" })
@@ -117,6 +139,8 @@ export default function ChildProfilePage() {
   const totalWeeks = closedReports.length
   const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
 
+  const profileIncomplete = !me?.birth_date || !me?.gender
+
   return (
     <div className="flex flex-col gap-6 pb-20">
       <div className="flex items-center justify-between">
@@ -133,6 +157,16 @@ export default function ChildProfilePage() {
           </Button>
         )}
       </div>
+
+      {requireProfile && profileIncomplete && (
+        <div className="flex items-start gap-2 rounded-xl border border-finance-pending/40 bg-finance-pending/10 p-3 text-[12px] text-finance-pending">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Заполните профиль</span>
+            <span>Нужны дата рождения и пол — без них задания недоступны.</span>
+          </div>
+        </div>
+      )}
 
       {/* Карточка с основной информацией */}
       <Card className="border-app-surface bg-app-card shadow-sm">
@@ -206,6 +240,12 @@ export default function ChildProfilePage() {
                 </Select>
               </div>
 
+              {requireProfile && profileIncomplete && (
+                <p className="text-[11px] text-finance-pending">
+                  Дата рождения и пол обязательны для сохранения.
+                </p>
+              )}
+
               <div className="flex justify-end gap-2 mt-1">
                 <Button
                   variant="ghost"
@@ -218,7 +258,11 @@ export default function ChildProfilePage() {
                 <Button
                   size="sm"
                   onClick={saveProfile}
-                  disabled={updateProfileMutation.isPending}
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    (requireProfile && profileIncomplete && !editForm.birth_date) ||
+                    (requireProfile && profileIncomplete && !editForm.gender)
+                  }
                   className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
                 >
                   <Check className="mr-1 h-3.5 w-3.5" />{" "}

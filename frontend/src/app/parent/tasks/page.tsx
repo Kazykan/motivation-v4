@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useTasks } from "@/hooks/useTasks"
 import { useChildren } from "@/hooks/useChildren"
 import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
+import { CheckSquare, Plus } from "lucide-react"
 import { TaskCardForParent } from "@/components/TaskCardForParent"
 import { TaskFormSheet } from "@/components/TaskFormSheet"
 import { cn } from "@/lib/utils"
@@ -69,6 +69,7 @@ export default function ParentTasksPage() {
         <Button
           size="sm"
           onClick={handleCreateNew}
+          disabled={children.length === 0}
           className="cursor-pointer bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
         >
           <Plus className="mr-1.5 h-4 w-4" />
@@ -114,7 +115,28 @@ export default function ParentTasksPage() {
       {loading ? (
         <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
       ) : tasks.length === 0 ? (
-        <div className="py-12 text-center text-sm text-text-muted">Нет заданий для отображения</div>
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-surface text-text-muted">
+            <CheckSquare className="h-8 w-8" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-semibold text-text-main">Заданий пока нет</p>
+            <p className="max-w-[16rem] text-xs text-text-muted">
+              {children.length === 0
+                ? "Сначала добавьте ребёнка в разделе «Дети»"
+                : "Создайте первое задание — ребёнок увидит его на этой неделе"}
+            </p>
+          </div>
+          <Button
+            size="lg"
+            onClick={handleCreateNew}
+            disabled={children.length === 0}
+            className="h-12 w-full max-w-xs bg-brand-action text-base font-semibold text-brand-action-text hover:bg-brand-action-hover disabled:opacity-50"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Создать задание
+          </Button>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {tasks.map((task: any) => {

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { childApi } from "@/services/childApi"
-import { useMe } from "@/hooks/useMe"
 import { useLogSyncStore } from "@/store/useLogSyncStore"
 import { ChildTaskCard } from "@/components/child/ChildTaskCard"
 import { WeekNavigator } from "@/components/WeekNavigator"
@@ -13,6 +12,7 @@ import { formatMoney } from "@/lib/money"
 import { LogStatusValue, ChildWeeklyItem } from "@/types/props"
 import { Check, Clock3, Wallet } from "lucide-react"
 import Link from "next/link"
+import { useRequireProfile } from "@/hooks/useRequireProfile"
 
 function normalizeItem(raw: any): ChildWeeklyItem {
   return {
@@ -32,10 +32,9 @@ function normalizeItem(raw: any): ChildWeeklyItem {
 }
 
 export default function ChildTasksPage() {
-  const { me } = useMe()
   const queryClient = useQueryClient()
   const { queueChange } = useLogSyncStore()
-
+  const { me, ready: profileReady } = useRequireProfile()
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
   const weekStartIso = toISODate(weekStart)
   const weekEndIso = toISODate(getWeekEnd(weekStart))
@@ -111,6 +110,10 @@ export default function ChildTasksPage() {
 
     return { canEarn, earned, pending, canStillEarn: Math.max(0, canEarn - earned - pending) }
   }, [items])
+
+  if (!profileReady) {
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
+  }
 
   return (
     <div className="flex flex-col gap-6 pb-20">
