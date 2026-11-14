@@ -5,7 +5,7 @@ import axios from "axios"
 // Клиент (браузер) — только относительные пути к своему origin
 // ─────────────────────────────────────────────────────────────
 export const api = axios.create({
-  baseURL: "",
+  baseURL: "/bff",
   timeout: 15_000,
   headers: { "Content-Type": "application/json" },
 })

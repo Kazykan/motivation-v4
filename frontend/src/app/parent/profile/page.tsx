@@ -11,7 +11,7 @@ export default function ParentProfilePage() {
   const { me, ready } = useMe()
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" })
+    await fetch("/bff/auth/logout", { method: "POST" })
     window.location.href = "/"
   }
 

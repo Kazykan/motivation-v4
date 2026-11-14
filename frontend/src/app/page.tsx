@@ -71,7 +71,7 @@ export default function Home() {
     ;(async () => {
       setPhase("checking")
       try {
-        const res = await fetch("/api/auth/state")
+        const res = await fetch("/bff/auth/state")
         const data = await res.json()
         if (cancelled) return
         if (!data?.hasBffSession) {

@@ -19,15 +19,15 @@ export interface MeResponse {
 
 export const authApi = {
   async me(): Promise<MeResponse> {
-    const res = await api.get("/api/auth/me")
+    const res = await api.get("/auth/me")
     return res.data
   },
   async registerParent(): Promise<MeResponse> {
-    const res = await api.post("/api/auth/me/register-parent")
+    const res = await api.post("/auth/me/register-parent")
     return res.data
   },
   async joinFamily(code: string, role: UserRole): Promise<MeResponse> {
-    const res = await api.post("/api/auth/me/join-family", { code, role })
+    const res = await api.post("/auth/me/join-family", { code, role })
     return res.data
   },
   async updateMe(
@@ -35,7 +35,7 @@ export const authApi = {
       Pick<MeResponse, "first_name" | "last_name" | "birth_date" | "gender" | "avatar_url">
     >,
   ): Promise<MeResponse> {
-    const res = await api.patch("/api/auth/me", data)
+    const res = await api.patch("/auth/me", data)
     return res.data
   },
 }

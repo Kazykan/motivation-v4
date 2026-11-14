@@ -8,7 +8,7 @@ export function AuthButtons() {
       <Button
         variant="outline"
         className="h-11 w-full"
-        onClick={() => (window.location.href = "/api/auth/google")}
+        onClick={() => (window.location.href = "/bff/auth/google")}
       >
         Войти через Google
       </Button>
@@ -16,7 +16,7 @@ export function AuthButtons() {
       <Button
         variant="outline"
         className="h-11 w-full"
-        onClick={() => (window.location.href = "/api/auth/vk")}
+        onClick={() => (window.location.href = "/bff/auth/vk")}
       >
         Войти через VK ID
       </Button>
