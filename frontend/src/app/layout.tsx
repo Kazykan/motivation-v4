@@ -1,15 +1,11 @@
-"use client"
-
-import { useEffect, useState } from "react"
-import type { Metadata, Viewport } from "next"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+// app/layout.tsx
+import type { Metadata } from "next"
 import { Inter, Cormorant_Garamond } from "next/font/google"
-import "./globals.css"
-import { Navigation } from "@/components/Navigation"
 import Script from "next/script"
+import "./globals.css"
+import { AppShell } from "@/components/AppShell"
 
 const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
-
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
   weight: ["500"],
@@ -19,33 +15,11 @@ const cormorant = Cormorant_Garamond({
 
 export const metadata: Metadata = {
   manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Motivation",
-  },
-  icons: {
-    apple: "/icons/apple-touch-icon.png",
-  },
-}
-
-export const viewport: Viewport = {
-  themeColor: "#e9ecef",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Motivation" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient())
-
-  useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp
-    if (tg) {
-      try {
-        tg.ready()
-        tg.expand()
-      } catch {}
-    }
-  }, [])
-
   return (
     <html
       lang="ru"
@@ -58,10 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body
         className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main pb-20`}
       >
-        <QueryClientProvider client={queryClient}>
-          <main className="mx-auto w-full max-w-md flex-1 px-4 py-6">{children}</main>
-          <Navigation />
-        </QueryClientProvider>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   )
