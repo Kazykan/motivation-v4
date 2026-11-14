@@ -10,7 +10,7 @@ import { CardContent } from "@/components/ui/card"
 import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
 import { formatMoney } from "@/lib/money"
 import { LogStatusValue, ChildWeeklyItem } from "@/types/props"
-import { Check, Clock3, Wallet } from "lucide-react"
+import { Check, ClipboardList, Clock3, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useRequireProfile } from "@/hooks/useRequireProfile"
 
@@ -192,7 +192,19 @@ export default function ChildTasksPage() {
         {isLoading ? (
           <div className="py-8 text-center text-sm text-text-muted">Загрузка заданий...</div>
         ) : items.length === 0 ? (
-          <div className="py-8 text-center text-sm text-text-muted">Нет активных заданий</div>
+          <div className="flex flex-col items-center gap-4 rounded-card border border-app-surface bg-app-card p-6 text-center shadow-sm">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-surface text-text-muted">
+              <ClipboardList className="h-8 w-8" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-base font-semibold text-text-main">Пока нечего выполнять</p>
+              <p className="max-w-[18rem] text-sm leading-relaxed text-text-muted">
+                Родитель ещё не назначил тебе заданий на эту неделю.
+                <br />
+                Попроси добавить задание — за каждое выполнение начисляются деньги.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
             {items.map((item) => (

@@ -175,6 +175,7 @@ frontend/src/components/WeeklyForecastCard.tsx
 frontend/src/components/WeekNavigator.tsx
 frontend/src/hooks/useChildren.ts
 frontend/src/hooks/useMe.ts
+frontend/src/hooks/useRequireProfile.ts
 frontend/src/hooks/useRequireRole.ts
 frontend/src/hooks/useTasks.ts
 frontend/src/lib/axios.ts
@@ -2535,6 +2536,37 @@ export {
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
+}
+</file>
+
+<file path="frontend/src/hooks/useRequireProfile.ts">
+"use client"
+
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useMe } from "@/hooks/useMe"
+
+/**
+ * Проверяет, что у ребёнка заполнены обязательные поля профиля
+ * (birth_date и gender). Если нет — редиректит на /child/profile?require=1.
+ *
+ * Возвращает { me, ready }: ready=false означает, что идёт проверка
+ * или выполняется редирект — контент рендерить нельзя.
+ */
+export function useRequireProfile() {
+  const router = useRouter()
+  const { me, ready } = useMe()
+
+  const missing = !!me && (!me.birth_date || !me.gender)
+
+  useEffect(() => {
+    if (!ready || !me) return
+    if (missing) {
+      router.replace("/child/profile?require=1")
+    }
+  }, [ready, me, missing, router])
+
+  return { me, ready: ready && !missing }
 }
 </file>
 
@@ -6867,212 +6899,6 @@ build = "python manage.py migrate --noinput"
 }
 </file>
 
-<file path="frontend/src/app/child/tasks/page.tsx">
-"use client"
-
-import { useMemo, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { childApi } from "@/services/childApi"
-import { useMe } from "@/hooks/useMe"
-import { useLogSyncStore } from "@/store/useLogSyncStore"
-import { ChildTaskCard } from "@/components/child/ChildTaskCard"
-import { WeekNavigator } from "@/components/WeekNavigator"
-import { CardContent } from "@/components/ui/card"
-import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
-import { formatMoney } from "@/lib/money"
-import { LogStatusValue, ChildWeeklyItem } from "@/types/props"
-import { Check, Clock3, Wallet } from "lucide-react"
-import Link from "next/link"
-
-function normalizeItem(raw: any): ChildWeeklyItem {
-  return {
-    ...raw,
-    weeklyPrice: raw.weeklyPrice ?? 0,
-    targetCount: raw.targetCount ?? 0,
-    targetDays: Array.isArray(raw.targetDays) ? raw.targetDays : [],
-    logs: Array.isArray(raw.logs) ? raw.logs : [],
-    weekClosed: !!raw.weekClosed,
-    summary: raw.summary ?? {
-      approvedCount: 0,
-      pendingCount: 0,
-      rejectedCount: 0,
-      calculatedAmount: 0,
-    },
-  }
-}
-
-export default function ChildTasksPage() {
-  const { me } = useMe()
-  const queryClient = useQueryClient()
-  const { queueChange } = useLogSyncStore()
-
-  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
-  const weekStartIso = toISODate(weekStart)
-  const weekEndIso = toISODate(getWeekEnd(weekStart))
-
-  const childId = me?.id
-
-  const { data: items = [], isLoading } = useQuery<ChildWeeklyItem[]>({
-    queryKey: ["child-weekly-review", childId, weekStartIso],
-    enabled: !!childId,
-    queryFn: async () => {
-      const raw = await childApi.getWeeklyReview(weekStartIso)
-      return (Array.isArray(raw) ? raw : []).map(normalizeItem)
-    },
-  })
-
-  const nextDisabled = useMemo(() => weekStart >= getMonday(new Date()), [weekStart])
-
-  const handleChangeStatus = async (
-    logId: number | null,
-    status: LogStatusValue,
-    taskId: number,
-    date: string,
-  ) => {
-    const key = ["child-weekly-review", childId, weekStartIso]
-
-    const updateCache = (oldData: any) => {
-      if (!oldData) return oldData
-      return (oldData as ChildWeeklyItem[]).map((item) => {
-        if (item.taskId !== taskId || item.weekClosed) return item
-        const idx = item.logs.findIndex((l) => l.date === date)
-        const nextLogs = [...item.logs]
-
-        const runs = item.targetCount || (item.targetDays?.length ?? 1) || 1
-        const pricePerRun = Number(item.weeklyPrice) / runs
-        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
-
-        if (idx >= 0) {
-          nextLogs[idx] = { ...nextLogs[idx], status, earned_amount: earnedAmount }
-        } else {
-          nextLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
-        }
-
-        return { ...item, logs: nextLogs }
-      })
-    }
-
-    queryClient.setQueryData(key, updateCache)
-    queueChange({ logId, taskId, date, status }, queryClient)
-  }
-
-  const totals = useMemo(() => {
-    let canEarn = 0
-    let earned = 0
-    let pending = 0
-
-    for (const item of items) {
-      const isFlexible = item.scheduleType === "FLEXIBLE"
-      const plannedRuns = isFlexible
-        ? Math.max(item.targetCount ?? 0, 1)
-        : Math.max(item.targetDays?.length ?? 0, 1)
-      const pricePerRun = Number(item.weeklyPrice) / plannedRuns
-
-      canEarn += Number(item.weeklyPrice)
-
-      for (const log of item.logs) {
-        if (log.status === "APPROVED") {
-          earned += Number(log.earned_amount ?? 0)
-        } else if (log.status === "DONE") {
-          pending += pricePerRun
-        }
-      }
-    }
-
-    return { canEarn, earned, pending, canStillEarn: Math.max(0, canEarn - earned - pending) }
-  }, [items])
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-text-main">Мои задания</h1>
-          <Link
-            href="/child/balance"
-            className="text-xs font-medium text-brand-action-hover hover:text-brand-action-text"
-          >
-            Кошелёк →
-          </Link>
-        </div>
-
-        <WeekNavigator
-          weekStart={weekStartIso}
-          weekEnd={weekEndIso}
-          onPrev={() => setWeekStart((d) => addWeeks(d, -1))}
-          onNext={() => !nextDisabled && setWeekStart((d) => addWeeks(d, 1))}
-          disableNext={nextDisabled}
-        />
-
-        {/* Сводка недели — светлая карточка */}
-        <div className="rounded-card bg-app-card p-5 shadow-sm border border-app-surface">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-finance-positive/10 text-finance-positive">
-                <Wallet className="h-6 w-6" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-text-main leading-tight">
-                  Моя неделя
-                </span>
-                <span className="text-[11px] text-text-muted">Заданий: {items.length}</span>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                  Заработано
-                </span>
-                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-positive tabular-nums">
-                  <Check className="h-3 w-3 stroke-[2.5]" />
-                  {formatMoney(totals.earned)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                  Ждёт проверки
-                </span>
-                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-pending tabular-nums">
-                  <Clock3 className="h-3 w-3" />
-                  {formatMoney(totals.pending)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                  Можно ещё
-                </span>
-                <span className="text-sm font-semibold text-text-main tabular-nums">
-                  {formatMoney(totals.canStillEarn)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-text-main">Задания на неделю</h2>
-          <span className="text-xs text-text-muted">Все ({items.length})</span>
-        </div>
-
-        {isLoading ? (
-          <div className="py-8 text-center text-sm text-text-muted">Загрузка заданий...</div>
-        ) : items.length === 0 ? (
-          <div className="py-8 text-center text-sm text-text-muted">Нет активных заданий</div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {items.map((item) => (
-              <ChildTaskCard key={item.taskId} item={item} onChangeStatus={handleChangeStatus} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/app/parent/profile/page.tsx">
 "use client"
 
@@ -7562,166 +7388,222 @@ export default function ChildBalancePage() {
 }
 </file>
 
-<file path="frontend/src/app/parent/tasks/page.tsx">
+<file path="frontend/src/app/child/tasks/page.tsx">
 "use client"
 
-import { useState, useEffect } from "react"
-import { useTasks } from "@/hooks/useTasks"
-import { useChildren } from "@/hooks/useChildren"
-import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
-import { TaskCardForParent } from "@/components/TaskCardForParent"
-import { TaskFormSheet } from "@/components/TaskFormSheet"
-import { cn } from "@/lib/utils"
+import { useMemo, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { childApi } from "@/services/childApi"
+import { useLogSyncStore } from "@/store/useLogSyncStore"
+import { ChildTaskCard } from "@/components/child/ChildTaskCard"
+import { WeekNavigator } from "@/components/WeekNavigator"
+import { CardContent } from "@/components/ui/card"
+import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
+import { formatMoney } from "@/lib/money"
+import { LogStatusValue, ChildWeeklyItem } from "@/types/props"
+import { Check, ClipboardList, Clock3, Wallet } from "lucide-react"
+import Link from "next/link"
+import { useRequireProfile } from "@/hooks/useRequireProfile"
 
-export default function ParentTasksPage() {
-  const [mounted, setMounted] = useState(false)
-  const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
-  const [isSheetOpen, setIsSheetOpen] = useState(false)
-  const [selectedTask, setSelectedTask] = useState<any | null>(null)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  const parsedChildId = selectedChildId === "ALL" ? undefined : Number(selectedChildId)
-
-  const {
-    tasks,
-    isLoading: tasksLoading,
-    createTask,
-    updateTask,
-    deleteTask,
-  } = useTasks(parsedChildId)
-  const { children, isLoading: childrenLoading } = useChildren()
-
-  if (!mounted) {
-    return null
+function normalizeItem(raw: any): ChildWeeklyItem {
+  return {
+    ...raw,
+    weeklyPrice: raw.weeklyPrice ?? 0,
+    targetCount: raw.targetCount ?? 0,
+    targetDays: Array.isArray(raw.targetDays) ? raw.targetDays : [],
+    logs: Array.isArray(raw.logs) ? raw.logs : [],
+    weekClosed: !!raw.weekClosed,
+    summary: raw.summary ?? {
+      approvedCount: 0,
+      pendingCount: 0,
+      rejectedCount: 0,
+      calculatedAmount: 0,
+    },
   }
+}
 
-  const loading = tasksLoading || childrenLoading
+export default function ChildTasksPage() {
+  const queryClient = useQueryClient()
+  const { queueChange } = useLogSyncStore()
+  const { me, ready: profileReady } = useRequireProfile()
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const weekStartIso = toISODate(weekStart)
+  const weekEndIso = toISODate(getWeekEnd(weekStart))
 
-  const handleCreateNew = () => {
-    setSelectedTask(null)
-    setIsSheetOpen(true)
-  }
+  const childId = me?.id
 
-  const handleEdit = (task: any) => {
-    setSelectedTask(task)
-    setIsSheetOpen(true)
-  }
+  const { data: items = [], isLoading } = useQuery<ChildWeeklyItem[]>({
+    queryKey: ["child-weekly-review", childId, weekStartIso],
+    enabled: !!childId,
+    queryFn: async () => {
+      const raw = await childApi.getWeeklyReview(weekStartIso)
+      return (Array.isArray(raw) ? raw : []).map(normalizeItem)
+    },
+  })
 
-  const handleDelete = async (id: number) => {
-    try {
-      deleteTask(id)
-    } catch (error) {
-      console.error("Ошибка удаления задания:", error)
+  const nextDisabled = useMemo(() => weekStart >= getMonday(new Date()), [weekStart])
+
+  const handleChangeStatus = async (
+    logId: number | null,
+    status: LogStatusValue,
+    taskId: number,
+    date: string,
+  ) => {
+    const key = ["child-weekly-review", childId, weekStartIso]
+
+    const updateCache = (oldData: any) => {
+      if (!oldData) return oldData
+      return (oldData as ChildWeeklyItem[]).map((item) => {
+        if (item.taskId !== taskId || item.weekClosed) return item
+        const idx = item.logs.findIndex((l) => l.date === date)
+        const nextLogs = [...item.logs]
+
+        const runs = item.targetCount || (item.targetDays?.length ?? 1) || 1
+        const pricePerRun = Number(item.weeklyPrice) / runs
+        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
+
+        if (idx >= 0) {
+          nextLogs[idx] = { ...nextLogs[idx], status, earned_amount: earnedAmount }
+        } else {
+          nextLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
+        }
+
+        return { ...item, logs: nextLogs }
+      })
     }
+
+    queryClient.setQueryData(key, updateCache)
+    queueChange({ logId, taskId, date, status }, queryClient)
   }
 
-  const handleSubmitForm = async (formData: any) => {
-    if (formData.id) {
-      updateTask({ id: formData.id, data: formData })
-    } else {
-      createTask(formData)
+  const totals = useMemo(() => {
+    let canEarn = 0
+    let earned = 0
+    let pending = 0
+
+    for (const item of items) {
+      const isFlexible = item.scheduleType === "FLEXIBLE"
+      const plannedRuns = isFlexible
+        ? Math.max(item.targetCount ?? 0, 1)
+        : Math.max(item.targetDays?.length ?? 0, 1)
+      const pricePerRun = Number(item.weeklyPrice) / plannedRuns
+
+      canEarn += Number(item.weeklyPrice)
+
+      for (const log of item.logs) {
+        if (log.status === "APPROVED") {
+          earned += Number(log.earned_amount ?? 0)
+        } else if (log.status === "DONE") {
+          pending += pricePerRun
+        }
+      }
     }
+
+    return { canEarn, earned, pending, canStillEarn: Math.max(0, canEarn - earned - pending) }
+  }, [items])
+
+  if (!profileReady) {
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-16">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Управление заданиями</h1>
-        <Button
-          size="sm"
-          onClick={handleCreateNew}
-          className="cursor-pointer bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          Создать
-        </Button>
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <button
-          onClick={() => setSelectedChildId("ALL")}
-          className={cn(
-            "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
-            selectedChildId === "ALL"
-              ? "bg-brand-primary text-brand-dark shadow-xs"
-              : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
-          )}
-        >
-          Все дети ({tasks.length})
-        </button>
-        {children.map((child: any) => {
-          const childIdStr = String(child.id)
-          const childTasksCount = tasks.filter(
-            (t: any) => String(t.child) === childIdStr || String(t.child_id) === childIdStr,
-          ).length
-
-          return (
-            <button
-              key={child.id}
-              onClick={() => setSelectedChildId(childIdStr)}
-              className={cn(
-                "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
-                selectedChildId === childIdStr
-                  ? "bg-brand-primary text-brand-dark shadow-xs"
-                  : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
-              )}
-            >
-              {child.first_name || child.name || "Ребенок"} ({childTasksCount})
-            </button>
-          )
-        })}
-      </div>
-
-      {loading ? (
-        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
-      ) : tasks.length === 0 ? (
-        <div className="py-12 text-center text-sm text-text-muted">Нет заданий для отображения</div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {tasks.map((task: any) => {
-            const currentChild = children.find(
-              (c: any) => String(c.id) === String(task.child || task.child_id),
-            )
-            const taskWithChildName = {
-              ...task,
-              child_name: currentChild?.first_name || currentChild?.name,
-            }
-
-            return (
-              <TaskCardForParent
-                key={task.id}
-                task={taskWithChildName}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            )
-          })}
+    <div className="flex flex-col gap-6 pb-20">
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold tracking-tight text-text-main">Мои задания</h1>
+          <Link
+            href="/child/balance"
+            className="text-xs font-medium text-brand-action-hover hover:text-brand-action-text"
+          >
+            Кошелёк →
+          </Link>
         </div>
-      )}
 
-      <TaskFormSheet
-        isOpen={isSheetOpen}
-        onClose={() => setIsSheetOpen(false)}
-        taskToEdit={
-          selectedTask
-            ? {
-                ...selectedTask,
-                child_id:
-                  selectedTask.child ||
-                  selectedTask.child_id ||
-                  (selectedChildId !== "ALL" ? Number(selectedChildId) : undefined),
-              }
-            : selectedChildId !== "ALL"
-              ? ({ child_id: Number(selectedChildId) } as any)
-              : null
-        }
-        childrenList={children}
-        onSubmit={handleSubmitForm}
-      />
+        <WeekNavigator
+          weekStart={weekStartIso}
+          weekEnd={weekEndIso}
+          onPrev={() => setWeekStart((d) => addWeeks(d, -1))}
+          onNext={() => !nextDisabled && setWeekStart((d) => addWeeks(d, 1))}
+          disableNext={nextDisabled}
+        />
+
+        {/* Сводка недели — светлая карточка */}
+        <div className="rounded-card bg-app-card p-5 shadow-sm border border-app-surface">
+          <CardContent className="p-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-finance-positive/10 text-finance-positive">
+                <Wallet className="h-6 w-6" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-text-main leading-tight">
+                  Моя неделя
+                </span>
+                <span className="text-[11px] text-text-muted">Заданий: {items.length}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Заработано
+                </span>
+                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-positive tabular-nums">
+                  <Check className="h-3 w-3 stroke-[2.5]" />
+                  {formatMoney(totals.earned)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Ждёт проверки
+                </span>
+                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-pending tabular-nums">
+                  <Clock3 className="h-3 w-3" />
+                  {formatMoney(totals.pending)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Можно ещё
+                </span>
+                <span className="text-sm font-semibold text-text-main tabular-nums">
+                  {formatMoney(totals.canStillEarn)}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-text-main">Задания на неделю</h2>
+          <span className="text-xs text-text-muted">Все ({items.length})</span>
+        </div>
+
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-text-muted">Загрузка заданий...</div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 rounded-card border border-app-surface bg-app-card p-6 text-center shadow-sm">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-surface text-text-muted">
+              <ClipboardList className="h-8 w-8" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-base font-semibold text-text-main">Пока нечего выполнять</p>
+              <p className="max-w-[18rem] text-sm leading-relaxed text-text-muted">
+                Родитель ещё не назначил тебе заданий на эту неделю.
+                <br />
+                Попроси добавить задание — за каждое выполнение начисляются деньги.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {items.map((item) => (
+              <ChildTaskCard key={item.taskId} item={item} onChangeStatus={handleChangeStatus} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
@@ -8834,6 +8716,193 @@ export default function ParentReportsPage() {
           })}
         </div>
       )}
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/app/parent/tasks/page.tsx">
+"use client"
+
+import { useState, useEffect } from "react"
+import { useTasks } from "@/hooks/useTasks"
+import { useChildren } from "@/hooks/useChildren"
+import { Button } from "@/components/ui/button"
+import { CheckSquare, Plus } from "lucide-react"
+import { TaskCardForParent } from "@/components/TaskCardForParent"
+import { TaskFormSheet } from "@/components/TaskFormSheet"
+import { cn } from "@/lib/utils"
+
+export default function ParentTasksPage() {
+  const [mounted, setMounted] = useState(false)
+  const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<any | null>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const parsedChildId = selectedChildId === "ALL" ? undefined : Number(selectedChildId)
+
+  const {
+    tasks,
+    isLoading: tasksLoading,
+    createTask,
+    updateTask,
+    deleteTask,
+  } = useTasks(parsedChildId)
+  const { children, isLoading: childrenLoading } = useChildren()
+
+  if (!mounted) {
+    return null
+  }
+
+  const loading = tasksLoading || childrenLoading
+
+  const handleCreateNew = () => {
+    setSelectedTask(null)
+    setIsSheetOpen(true)
+  }
+
+  const handleEdit = (task: any) => {
+    setSelectedTask(task)
+    setIsSheetOpen(true)
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      deleteTask(id)
+    } catch (error) {
+      console.error("Ошибка удаления задания:", error)
+    }
+  }
+
+  const handleSubmitForm = async (formData: any) => {
+    if (formData.id) {
+      updateTask({ id: formData.id, data: formData })
+    } else {
+      createTask(formData)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6 pb-16">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Управление заданиями</h1>
+        <Button
+          size="sm"
+          onClick={handleCreateNew}
+          disabled={children.length === 0}
+          className="cursor-pointer bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
+        >
+          <Plus className="mr-1.5 h-4 w-4" />
+          Создать
+        </Button>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          onClick={() => setSelectedChildId("ALL")}
+          className={cn(
+            "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
+            selectedChildId === "ALL"
+              ? "bg-brand-primary text-brand-dark shadow-xs"
+              : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
+          )}
+        >
+          Все дети ({tasks.length})
+        </button>
+        {children.map((child: any) => {
+          const childIdStr = String(child.id)
+          const childTasksCount = tasks.filter(
+            (t: any) => String(t.child) === childIdStr || String(t.child_id) === childIdStr,
+          ).length
+
+          return (
+            <button
+              key={child.id}
+              onClick={() => setSelectedChildId(childIdStr)}
+              className={cn(
+                "cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
+                selectedChildId === childIdStr
+                  ? "bg-brand-primary text-brand-dark shadow-xs"
+                  : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface",
+              )}
+            >
+              {child.first_name || child.name || "Ребенок"} ({childTasksCount})
+            </button>
+          )
+        })}
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
+      ) : tasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-surface text-text-muted">
+            <CheckSquare className="h-8 w-8" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-semibold text-text-main">Заданий пока нет</p>
+            <p className="max-w-[16rem] text-xs text-text-muted">
+              {children.length === 0
+                ? "Сначала добавьте ребёнка в разделе «Дети»"
+                : "Создайте первое задание — ребёнок увидит его на этой неделе"}
+            </p>
+          </div>
+          <Button
+            size="lg"
+            onClick={handleCreateNew}
+            disabled={children.length === 0}
+            className="h-12 w-full max-w-xs bg-brand-action text-base font-semibold text-brand-action-text hover:bg-brand-action-hover disabled:opacity-50"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Создать задание
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {tasks.map((task: any) => {
+            const currentChild = children.find(
+              (c: any) => String(c.id) === String(task.child || task.child_id),
+            )
+            const taskWithChildName = {
+              ...task,
+              child_name: currentChild?.first_name || currentChild?.name,
+            }
+
+            return (
+              <TaskCardForParent
+                key={task.id}
+                task={taskWithChildName}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            )
+          })}
+        </div>
+      )}
+
+      <TaskFormSheet
+        isOpen={isSheetOpen}
+        onClose={() => setIsSheetOpen(false)}
+        taskToEdit={
+          selectedTask
+            ? {
+                ...selectedTask,
+                child_id:
+                  selectedTask.child ||
+                  selectedTask.child_id ||
+                  (selectedChildId !== "ALL" ? Number(selectedChildId) : undefined),
+              }
+            : selectedChildId !== "ALL"
+              ? ({ child_id: Number(selectedChildId) } as any)
+              : null
+        }
+        childrenList={children}
+        onSubmit={handleSubmitForm}
+      />
     </div>
   )
 }
@@ -10271,325 +10340,6 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         return obj.changed_by.avatar_url or None
 </file>
 
-<file path="frontend/src/app/child/profile/page.tsx">
-"use client"
-
-import { useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { format } from "date-fns"
-import { ru } from "date-fns/locale"
-import {
-  Calendar as CalendarIcon,
-  LogOut,
-  User,
-  Trophy,
-  CalendarDays,
-  Pencil,
-  Check,
-  X,
-} from "lucide-react"
-
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useMe } from "@/hooks/useMe"
-import { childApi } from "@/services/childApi"
-import { authApi } from "@/services/authApi"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
-import { parentApi } from "@/services/parentApi"
-
-function calcAge(birthDate?: string | null): number | null {
-  if (!birthDate) return null
-  const b = new Date(birthDate)
-  if (isNaN(b.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - b.getFullYear()
-  const m = now.getMonth() - b.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
-  return age
-}
-
-export default function ChildProfilePage() {
-  const { me, ready } = useMe()
-  const queryClient = useQueryClient()
-
-  const [isEditing, setIsEditing] = useState(false)
-  const [editForm, setEditForm] = useState({
-    first_name: "",
-    last_name: "",
-    birth_date: undefined as Date | undefined,
-    gender: "" as "MALE" | "FEMALE" | "",
-  })
-
-  const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["child-payouts"],
-    queryFn: () => childApi.getMyReports(),
-  })
-
-  const { data: familyMembers = [] } = useQuery<any[]>({
-    queryKey: ["family-members"],
-    queryFn: () => parentApi.getFamilyMembers(),
-    enabled: !!me?.family_id,
-  })
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (data: any) => authApi.updateMe(data),
-    onSuccess: (updatedData) => {
-      queryClient.setQueryData(["me"], updatedData)
-      // Инвалидируем запрос, чтобы useMe() подтянул свежие данные при следующем рендере
-      queryClient.invalidateQueries({ queryKey: ["me"] })
-      setIsEditing(false)
-    },
-  })
-
-  const handleLogout = async () => {
-    await fetch("/bff/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  const startEditing = () => {
-    setEditForm({
-      first_name: me?.first_name || "",
-      last_name: me?.last_name || "",
-      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
-      gender: (me?.gender as "MALE" | "FEMALE") || "",
-    })
-    setIsEditing(true)
-  }
-
-  const saveProfile = () => {
-    updateProfileMutation.mutate({
-      first_name: editForm.first_name,
-      last_name: editForm.last_name,
-      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
-      gender: editForm.gender || null,
-    })
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
-  const age = calcAge(me?.birth_date)
-  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
-
-  const closedReports = (reports as any[]).filter(
-    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
-  )
-  const totalWeeks = closedReports.length
-  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-        {!isEditing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={startEditing}
-            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Изменить
-          </Button>
-        )}
-      </div>
-
-      {/* Карточка с основной информацией */}
-      <Card className="border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-start gap-4 p-5">
-          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
-            <AvatarImage src={me?.avatar_url ?? undefined} />
-            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
-              {(fullName || "?").slice(0, 1)}
-            </AvatarFallback>
-          </Avatar>
-
-          {isEditing ? (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Имя"
-                  value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-                <Input
-                  placeholder="Фамилия"
-                  value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
-                          !editForm.birth_date && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editForm.birth_date
-                          ? format(editForm.birth_date, "dd.MM.yyyy")
-                          : "Дата рождения"}
-                      </Button>
-                    }
-                  />
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={editForm.birth_date}
-                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
-                      autoFocus
-                      captionLayout="dropdown"
-                      startMonth={new Date(2000, 0)}
-                      endMonth={new Date(new Date().getFullYear(), 11)}
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <Select
-                  value={editForm.gender}
-                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
-                >
-                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
-                    <SelectValue placeholder="Пол" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MALE">Мужской</SelectItem>
-                    <SelectItem value="FEMALE">Женский</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsEditing(false)}
-                  className="h-8 text-text-muted"
-                >
-                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={saveProfile}
-                  disabled={updateProfileMutation.isPending}
-                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
-                >
-                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
-                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-text-main">{fullName}</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
-                >
-                  Ребёнок
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                {age !== null && <span>{age} лет</span>}
-                {age !== null && genderLabel && <span>•</span>}
-                {genderLabel && <span>{genderLabel}</span>}
-                {!age && !genderLabel && <span>Данные не заполнены</span>}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Успехи */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <Trophy className="h-4 w-4 text-finance-pending" />
-            Мои успехи
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 pt-0">
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Закрытых недель</span>
-            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
-          </div>
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
-            <span className="text-lg font-bold text-text-main">
-              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Семья */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <CalendarDays className="h-4 w-4 text-text-muted" />
-            Моя семья
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {me?.family_id ? (
-            <div className="flex flex-col gap-3 mt-1">
-              {familyMembers.map((member) => (
-                <div key={member.id} className="flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={member.avatar_url} />
-                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
-                      {member.first_name?.[0] || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-text-main">
-                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
-                        "Без имени"}
-                    </span>
-                    <span className="text-[11px] text-text-muted">
-                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-text-muted">Семья не привязана</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
-        <LogOut className="mr-1.5 h-3.5 w-3.5" />
-        Выйти
-      </Button>
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/components/Navigation.tsx">
 "use client"
 
@@ -10748,6 +10498,369 @@ serverApi.interceptors.request.use((config) => {
 export function getTgInitData(): string | null {
   if (typeof window === "undefined") return null
   return (window as any).Telegram?.WebApp?.initData || null
+}
+</file>
+
+<file path="frontend/src/app/child/profile/page.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { format } from "date-fns"
+import {
+  Calendar as CalendarIcon,
+  LogOut,
+  Trophy,
+  CalendarDays,
+  Pencil,
+  Check,
+  X,
+  AlertTriangle,
+} from "lucide-react"
+
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useMe } from "@/hooks/useMe"
+import { childApi } from "@/services/childApi"
+import { authApi } from "@/services/authApi"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { parentApi } from "@/services/parentApi"
+
+function calcAge(birthDate?: string | null): number | null {
+  if (!birthDate) return null
+  const b = new Date(birthDate)
+  if (isNaN(b.getTime())) return null
+  const now = new Date()
+  let age = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
+  return age
+}
+
+export default function ChildProfilePage() {
+  const { me, ready } = useMe()
+  const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  const requireProfile = searchParams.get("require") === "1"
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    birth_date: undefined as Date | undefined,
+    gender: "" as "MALE" | "FEMALE" | "",
+  })
+
+  const { data: reports = [] } = useQuery<any[]>({
+    queryKey: ["child-payouts"],
+    queryFn: () => childApi.getMyReports(),
+  })
+
+  const { data: familyMembers = [] } = useQuery<any[]>({
+    queryKey: ["family-members"],
+    queryFn: () => parentApi.getFamilyMembers(),
+    enabled: !!me?.family_id,
+  })
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: any) => authApi.updateMe(data),
+    onSuccess: (updatedData) => {
+      queryClient.setQueryData(["me"], updatedData)
+      queryClient.invalidateQueries({ queryKey: ["me"] })
+      setIsEditing(false)
+
+      // Если пришли по требованию — убираем флаг, чтобы баннер исчез.
+      if (requireProfile) {
+        router.replace("/child/profile")
+      }
+    },
+  })
+
+  // Авто-открытие редактора, если пришли по требованию и поля не заполнены.
+  useEffect(() => {
+    if (!ready || !me) return
+    if (requireProfile && (!me.birth_date || !me.gender)) {
+      setEditForm({
+        first_name: me.first_name || "",
+        last_name: me.last_name || "",
+        birth_date: me.birth_date ? new Date(me.birth_date) : undefined,
+        gender: (me.gender as "MALE" | "FEMALE") || "",
+      })
+      setIsEditing(true)
+    }
+  }, [ready, me, requireProfile])
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  const startEditing = () => {
+    setEditForm({
+      first_name: me?.first_name || "",
+      last_name: me?.last_name || "",
+      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
+      gender: (me?.gender as "MALE" | "FEMALE") || "",
+    })
+    setIsEditing(true)
+  }
+
+  const saveProfile = () => {
+    updateProfileMutation.mutate({
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
+      gender: editForm.gender || null,
+    })
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
+  const age = calcAge(me?.birth_date)
+  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
+
+  const closedReports = (reports as any[]).filter(
+    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
+  )
+  const totalWeeks = closedReports.length
+  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
+
+  const profileIncomplete = !me?.birth_date || !me?.gender
+
+  return (
+    <div className="flex flex-col gap-6 pb-20">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startEditing}
+            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Изменить
+          </Button>
+        )}
+      </div>
+
+      {requireProfile && profileIncomplete && (
+        <div className="flex items-start gap-2 rounded-xl border border-finance-pending/40 bg-finance-pending/10 p-3 text-[12px] text-finance-pending">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Заполните профиль</span>
+            <span>Нужны дата рождения и пол — без них задания недоступны.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Карточка с основной информацией */}
+      <Card className="border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-start gap-4 p-5">
+          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
+            <AvatarImage src={me?.avatar_url ?? undefined} />
+            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
+              {(fullName || "?").slice(0, 1)}
+            </AvatarFallback>
+          </Avatar>
+
+          {isEditing ? (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Имя"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+                <Input
+                  placeholder="Фамилия"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
+                          !editForm.birth_date && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editForm.birth_date
+                          ? format(editForm.birth_date, "dd.MM.yyyy")
+                          : "Дата рождения"}
+                      </Button>
+                    }
+                  />
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editForm.birth_date}
+                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
+                      autoFocus
+                      captionLayout="dropdown"
+                      startMonth={new Date(2000, 0)}
+                      endMonth={new Date(new Date().getFullYear(), 11)}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Select
+                  value={editForm.gender}
+                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
+                >
+                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
+                    <SelectValue placeholder="Пол" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MALE">Мужской</SelectItem>
+                    <SelectItem value="FEMALE">Женский</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {requireProfile && profileIncomplete && (
+                <p className="text-[11px] text-finance-pending">
+                  Дата рождения и пол обязательны для сохранения.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 mt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  className="h-8 text-text-muted"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveProfile}
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    (requireProfile && profileIncomplete && !editForm.birth_date) ||
+                    (requireProfile && profileIncomplete && !editForm.gender)
+                  }
+                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
+                >
+                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
+                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1 pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-text-main">{fullName}</span>
+                <Badge
+                  variant="secondary"
+                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
+                >
+                  Ребёнок
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                {age !== null && <span>{age} лет</span>}
+                {age !== null && genderLabel && <span>•</span>}
+                {genderLabel && <span>{genderLabel}</span>}
+                {!age && !genderLabel && <span>Данные не заполнены</span>}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Успехи */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <Trophy className="h-4 w-4 text-finance-pending" />
+            Мои успехи
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 pt-0">
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Закрытых недель</span>
+            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
+          </div>
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
+            <span className="text-lg font-bold text-text-main">
+              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Семья */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <CalendarDays className="h-4 w-4 text-text-muted" />
+            Моя семья
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {me?.family_id ? (
+            <div className="flex flex-col gap-3 mt-1">
+              {familyMembers.map((member) => (
+                <div key={member.id} className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={member.avatar_url} />
+                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
+                      {member.first_name?.[0] || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-text-main">
+                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
+                        "Без имени"}
+                    </span>
+                    <span className="text-[11px] text-text-muted">
+                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">Семья не привязана</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
+        <LogOut className="mr-1.5 h-3.5 w-3.5" />
+        Выйти
+      </Button>
+    </div>
+  )
 }
 </file>
 
