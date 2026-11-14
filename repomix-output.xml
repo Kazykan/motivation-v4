@@ -95,31 +95,31 @@ frontend/public/next.svg
 frontend/public/vercel.svg
 frontend/public/window.svg
 frontend/README.md
-frontend/src/app/api/auth/callback/google/route.ts
-frontend/src/app/api/auth/callback/vk/route.ts
-frontend/src/app/api/auth/google/route.ts
-frontend/src/app/api/auth/logout/route.ts
-frontend/src/app/api/auth/me/join-family/route.ts
-frontend/src/app/api/auth/me/register-parent/route.ts
-frontend/src/app/api/auth/me/route.ts
-frontend/src/app/api/auth/state/route.ts
-frontend/src/app/api/auth/vk/route.ts
-frontend/src/app/api/child/reports/route.ts
-frontend/src/app/api/child/weekly-review/route.ts
-frontend/src/app/api/children/route.ts
-frontend/src/app/api/family/members/route.ts
-frontend/src/app/api/invites/route.ts
-frontend/src/app/api/parent/reports/[id]/close/route.ts
-frontend/src/app/api/parent/reports/route.ts
-frontend/src/app/api/task-logs/[id]/history/route.ts
-frontend/src/app/api/task-logs/[id]/route.ts
-frontend/src/app/api/task-logs/bulk-approve/route.ts
-frontend/src/app/api/task-logs/route.ts
-frontend/src/app/api/tasks/[id]/route.ts
-frontend/src/app/api/tasks/close-week/route.ts
-frontend/src/app/api/tasks/my-weekly-report/route.ts
-frontend/src/app/api/tasks/route.ts
-frontend/src/app/api/tasks/weekly-review/route.ts
+frontend/src/app/bff/auth/callback/google/route.ts
+frontend/src/app/bff/auth/callback/vk/route.ts
+frontend/src/app/bff/auth/google/route.ts
+frontend/src/app/bff/auth/logout/route.ts
+frontend/src/app/bff/auth/me/join-family/route.ts
+frontend/src/app/bff/auth/me/register-parent/route.ts
+frontend/src/app/bff/auth/me/route.ts
+frontend/src/app/bff/auth/state/route.ts
+frontend/src/app/bff/auth/vk/route.ts
+frontend/src/app/bff/child/reports/route.ts
+frontend/src/app/bff/child/weekly-review/route.ts
+frontend/src/app/bff/children/route.ts
+frontend/src/app/bff/family/members/route.ts
+frontend/src/app/bff/invites/route.ts
+frontend/src/app/bff/parent/reports/[id]/close/route.ts
+frontend/src/app/bff/parent/reports/route.ts
+frontend/src/app/bff/task-logs/[id]/history/route.ts
+frontend/src/app/bff/task-logs/[id]/route.ts
+frontend/src/app/bff/task-logs/bulk-approve/route.ts
+frontend/src/app/bff/task-logs/route.ts
+frontend/src/app/bff/tasks/[id]/route.ts
+frontend/src/app/bff/tasks/close-week/route.ts
+frontend/src/app/bff/tasks/my-weekly-report/route.ts
+frontend/src/app/bff/tasks/route.ts
+frontend/src/app/bff/tasks/weekly-review/route.ts
 frontend/src/app/child/balance/page.tsx
 frontend/src/app/child/page.tsx
 frontend/src/app/child/profile/page.tsx
@@ -922,7 +922,91 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 </file>
 
-<file path="frontend/src/app/api/auth/callback/vk/route.ts">
+<file path="frontend/src/app/bff/auth/callback/google/route.ts">
+import { NextResponse } from "next/server"
+import { cookies } from "next/headers"
+import { serverApi } from "@/lib/axios"
+import { setSessionCookie } from "@/lib/session"
+
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const code = url.searchParams.get("code")
+  const state = url.searchParams.get("state")
+  const error = url.searchParams.get("error")
+
+  const base = process.env.NEXT_PUBLIC_APP_URL || url.origin
+
+  if (error || !code) {
+    return NextResponse.redirect(`${base}/?auth_error=google_cancelled`)
+  }
+
+  const jar = await cookies()
+  const expectedState = jar.get("google_oauth_state")?.value
+  jar.delete("google_oauth_state")
+
+  if (!state || !expectedState || state !== expectedState) {
+    return NextResponse.redirect(`${base}/?auth_error=google_state`)
+  }
+
+  const clientId = process.env.GOOGLE_CLIENT_ID!
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI!
+
+  try {
+    // 1. Обмен code → tokens
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }),
+    })
+    if (!tokenRes.ok) throw new Error("token_exchange_failed")
+    const tokens = await tokenRes.json()
+
+    // 2. Валидация id_token через официальный endpoint Google
+    const infoRes = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${tokens.id_token}`,
+    )
+    if (!infoRes.ok) throw new Error("id_token_invalid")
+    const info = await infoRes.json()
+
+    if (info.aud !== clientId) throw new Error("aud_mismatch")
+    if (!["accounts.google.com", "https://accounts.google.com"].includes(info.iss)) {
+      throw new Error("iss_mismatch")
+    }
+    if (!info.sub) throw new Error("sub_missing")
+
+    // 3. Вызов Django: находит/создаёт пользователя по google_id
+    const djangoRes = await serverApi.post("/api/v1/auth/oauth/", {
+      provider: "google",
+      provider_user_id: info.sub,
+      email: info.email ?? "",
+      first_name: info.given_name ?? "",
+      last_name: info.family_name ?? "",
+      avatar_url: info.picture ?? "",
+    })
+
+    // 4. Сохраняем сессию BFF (Django вернул user payload)
+    await setSessionCookie({
+      provider: "google",
+      provider_user_id: info.sub,
+      django_user_id: djangoRes.data.id,
+    })
+
+    return NextResponse.redirect(`${base}/`)
+  } catch (e: any) {
+    console.error("[google callback]", e?.message ?? e)
+    return NextResponse.redirect(`${base}/?auth_error=google_failed`)
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/auth/callback/vk/route.ts">
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { serverApi } from "@/lib/axios"
@@ -1008,7 +1092,7 @@ export async function GET(request: Request) {
 }
 </file>
 
-<file path="frontend/src/app/api/auth/google/route.ts">
+<file path="frontend/src/app/bff/auth/google/route.ts">
 import { NextResponse } from "next/server"
 import { randomBytes } from "crypto"
 import { cookies } from "next/headers"
@@ -1044,7 +1128,7 @@ export async function GET(request: Request) {
 }
 </file>
 
-<file path="frontend/src/app/api/auth/logout/route.ts">
+<file path="frontend/src/app/bff/auth/logout/route.ts">
 import { NextResponse } from "next/server"
 import { clearSessionCookie } from "@/lib/session"
 
@@ -1054,7 +1138,105 @@ export async function POST() {
 }
 </file>
 
-<file path="frontend/src/app/api/auth/state/route.ts">
+<file path="frontend/src/app/bff/auth/me/join-family/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/auth/join-family/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Неверный код" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/auth/me/register-parent/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const res = await serverApi.post(
+      "/api/v1/auth/register-parent/",
+      {},
+      {
+        headers: await buildDjangoHeaders(request),
+      },
+    )
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка создания семьи" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/auth/me/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders, extractInitData } from "@/lib/bffAuth"
+import { readSessionCookie, setSessionCookie } from "@/lib/session"
+
+export async function GET(request: Request) {
+  const session = await readSessionCookie()
+  const initData = extractInitData(request)
+
+  // Ни сессии, ни initData — аутентификации нет, Django дёргать незачем.
+  if (!session?.django_user_id && !initData) {
+    return NextResponse.json({ error: "Нет аутентификации" }, { status: 401 })
+  }
+
+  try {
+    const res = await serverApi.get("/api/v1/auth/me/", {
+      headers: await buildDjangoHeaders(request),
+    })
+
+    if (!session?.django_user_id) {
+      await setSessionCookie({
+        provider: "telegram",
+        provider_user_id: String(res.data.telegram_id ?? ""),
+        django_user_id: res.data.id,
+      })
+    }
+
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка профиля" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.patch("/api/v1/auth/me/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка обновления профиля" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/auth/state/route.ts">
 // frontend/src/app/api/auth/state/route.ts
 import { NextResponse } from "next/server"
 import { readSessionCookie } from "@/lib/session"
@@ -1067,7 +1249,7 @@ export async function GET() {
 }
 </file>
 
-<file path="frontend/src/app/api/auth/vk/route.ts">
+<file path="frontend/src/app/bff/auth/vk/route.ts">
 import { NextResponse } from "next/server"
 import { randomBytes, createHash } from "crypto"
 import { cookies } from "next/headers"
@@ -1119,7 +1301,7 @@ export async function GET(request: Request) {
 }
 </file>
 
-<file path="frontend/src/app/api/child/reports/route.ts">
+<file path="frontend/src/app/bff/child/reports/route.ts">
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
 import { buildDjangoHeaders } from "@/lib/bffAuth"
@@ -1145,7 +1327,7 @@ export async function GET(request: Request) {
 }
 </file>
 
-<file path="frontend/src/app/api/child/weekly-review/route.ts">
+<file path="frontend/src/app/bff/child/weekly-review/route.ts">
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
 import { buildDjangoHeaders } from "@/lib/bffAuth"
@@ -1179,7 +1361,29 @@ export async function GET(request: Request) {
 }
 </file>
 
-<file path="frontend/src/app/api/family/members/route.ts">
+<file path="frontend/src/app/bff/children/route.ts">
+// frontend/src/app/api/children/route.ts
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const res = await serverApi.get("/api/v1/users/", {
+      params: { is_child: true },
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data || "Ошибка при получении данных" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/family/members/route.ts">
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
 import { buildDjangoHeaders } from "@/lib/bffAuth"
@@ -1193,6 +1397,371 @@ export async function GET(request: Request) {
   } catch (error: any) {
     return NextResponse.json(
       { error: error.response?.data?.detail || "Ошибка получения членов семьи" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/invites/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const res = await serverApi.get("/api/v1/invites/current/", {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка получения кода" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const res = await serverApi.post(
+      "/api/v1/invites/",
+      {},
+      { headers: await buildDjangoHeaders(request) },
+    )
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка создания кода" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/parent/reports/[id]/close/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params
+    const body = await request.json()
+
+    const res = await serverApi.patch(`/api/v1/weekly-reports/${id}/`, body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Ошибка при закрытии недели" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/parent/reports/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const childId = searchParams.get("child_id")
+    const weekStart = searchParams.get("week_start")
+
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (weekStart) params.week_start = weekStart
+
+    const res = await serverApi.get("/api/v1/tasks/reports-overview/", {
+      params,
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка при получении недельных отчетов" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+
+    // Если пришёл child_id + week_start — создаём/закрываем неделю
+    // через специализированный action (рассчитывает суммы сам).
+    // Иначе — старое поведение: прямое создание WeeklyReport.
+    if (body?.child_id && body?.week_start) {
+      const res = await serverApi.post("/api/v1/tasks/close-week/", body, {
+        headers: await buildDjangoHeaders(request),
+      })
+      return NextResponse.json(res.data)
+    }
+
+    const res = await serverApi.post("/api/v1/weekly-reports/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка при создании/обновлении отчета" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/task-logs/[id]/history/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params
+    const headers = await buildDjangoHeaders(request)
+    const res = await serverApi.get(`/api/v1/task-logs/${id}/history/`, { headers })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Ошибка получения истории" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/task-logs/[id]/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params
+    const body = await request.json()
+    const headers = await buildDjangoHeaders(request)
+
+    const res = await serverApi.patch(`/api/v1/task-logs/${id}/`, body, { headers })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Ошибка обновления статуса лога" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/task-logs/bulk-approve/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const headers = await buildDjangoHeaders(request)
+    const res = await serverApi.post("/api/v1/task-logs/bulk-approve/", body, { headers })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Ошибка массового подтверждения" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/task-logs/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const headers = await buildDjangoHeaders(request)
+
+    const params: Record<string, any> = {}
+    const childId = searchParams.get("child_id")
+    const date = searchParams.get("date")
+    if (childId) params.child_id = childId
+    if (date) params.date = date
+
+    const res = await serverApi.get("/api/v1/task-logs/", { params, headers })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Ошибка получения логов" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const headers = await buildDjangoHeaders(request)
+    const res = await serverApi.post("/api/v1/task-logs/", body, { headers })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка создания лога" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/tasks/[id]/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params
+    const body = await request.json()
+    const res = await serverApi.put(`/api/v1/tasks/${id}/`, body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data || "Ошибка при обновлении задачи" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params
+    await serverApi.delete(`/api/v1/tasks/${id}/`, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data || "Ошибка при удалении задачи" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/tasks/close-week/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/tasks/close-week/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка закрытия недели" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/tasks/my-weekly-report/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const res = await serverApi.get("/api/v1/tasks/my-weekly-report/", {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка отчёта" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/tasks/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const childId = searchParams.get("child_id")
+
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+
+    const res = await serverApi.get("/api/v1/tasks/", {
+      params,
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data || "Ошибка при получении задач" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/tasks/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data || "Ошибка при создании задачи" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/tasks/weekly-review/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const childId = searchParams.get("child_id")
+    const weekStart = searchParams.get("week_start")
+
+    const headers = await buildDjangoHeaders(request)
+
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (weekStart) params.week_start = weekStart
+
+    const res = await serverApi.get("/api/v1/tasks/weekly-review/", { params, headers })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка получения обзора недели" },
       { status: error.response?.status || 500 },
     )
   }
@@ -2289,36 +2858,6 @@ export function isWeekCloseable(monday: Date): boolean {
 Это мини-приложение – это отличный инструмент для того, чтобы мотивировать детей к саморазвитию, самостоятельности и ответственности.  Мы надеемся, что оно принесет пользу и радость как детям, так и их родителям!
 </file>
 
-<file path="vercel.json">
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "services": {
-    "backend": {
-      "root": "backend",
-      "framework": "django"
-    },
-    "frontend": {
-      "root": "frontend",
-      "framework": "nextjs"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": {
-        "service": "backend"
-      }
-    },
-    {
-      "source": "/(.*)",
-      "destination": {
-        "service": "frontend"
-      }
-    }
-  ]
-}
-</file>
-
 <file path="backend/motivation/auth_urls.py">
 from django.urls import path
 from .views import MeView, RegisterParentView, JoinByCodeView, OAuthLoginView
@@ -2957,374 +3496,6 @@ import type { NextConfig } from "next"
 const nextConfig: NextConfig = {}
 
 export default nextConfig
-</file>
-
-<file path="frontend/src/app/api/auth/callback/google/route.ts">
-import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { serverApi } from "@/lib/axios"
-import { setSessionCookie } from "@/lib/session"
-
-export async function GET(request: Request) {
-  const url = new URL(request.url)
-  const code = url.searchParams.get("code")
-  const state = url.searchParams.get("state")
-  const error = url.searchParams.get("error")
-
-  const base = process.env.NEXT_PUBLIC_APP_URL || url.origin
-
-  if (error || !code) {
-    return NextResponse.redirect(`${base}/?auth_error=google_cancelled`)
-  }
-
-  const jar = await cookies()
-  const expectedState = jar.get("google_oauth_state")?.value
-  jar.delete("google_oauth_state")
-
-  if (!state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(`${base}/?auth_error=google_state`)
-  }
-
-  const clientId = process.env.GOOGLE_CLIENT_ID!
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI!
-
-  try {
-    // 1. Обмен code → tokens
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
-    })
-    if (!tokenRes.ok) throw new Error("token_exchange_failed")
-    const tokens = await tokenRes.json()
-
-    // 2. Валидация id_token через официальный endpoint Google
-    const infoRes = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?id_token=${tokens.id_token}`,
-    )
-    if (!infoRes.ok) throw new Error("id_token_invalid")
-    const info = await infoRes.json()
-
-    if (info.aud !== clientId) throw new Error("aud_mismatch")
-    if (!["accounts.google.com", "https://accounts.google.com"].includes(info.iss)) {
-      throw new Error("iss_mismatch")
-    }
-    if (!info.sub) throw new Error("sub_missing")
-
-    // 3. Вызов Django: находит/создаёт пользователя по google_id
-    const djangoRes = await serverApi.post("/api/v1/auth/oauth/", {
-      provider: "google",
-      provider_user_id: info.sub,
-      email: info.email ?? "",
-      first_name: info.given_name ?? "",
-      last_name: info.family_name ?? "",
-      avatar_url: info.picture ?? "",
-    })
-
-    // 4. Сохраняем сессию BFF (Django вернул user payload)
-    await setSessionCookie({
-      provider: "google",
-      provider_user_id: info.sub,
-      django_user_id: djangoRes.data.id,
-    })
-
-    return NextResponse.redirect(`${base}/`)
-  } catch (e: any) {
-    console.error("[google callback]", e?.message ?? e)
-    return NextResponse.redirect(`${base}/?auth_error=google_failed`)
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/auth/me/join-family/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const res = await serverApi.post("/api/v1/auth/join-family/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Неверный код" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/auth/me/register-parent/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const res = await serverApi.post(
-      "/api/v1/auth/register-parent/",
-      {},
-      {
-        headers: await buildDjangoHeaders(request),
-      },
-    )
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка создания семьи" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/auth/me/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders, extractInitData } from "@/lib/bffAuth"
-import { readSessionCookie, setSessionCookie } from "@/lib/session"
-
-export async function GET(request: Request) {
-  const session = await readSessionCookie()
-  const initData = extractInitData(request)
-
-  // Ни сессии, ни initData — аутентификации нет, Django дёргать незачем.
-  if (!session?.django_user_id && !initData) {
-    return NextResponse.json({ error: "Нет аутентификации" }, { status: 401 })
-  }
-
-  try {
-    const res = await serverApi.get("/api/v1/auth/me/", {
-      headers: await buildDjangoHeaders(request),
-    })
-
-    if (!session?.django_user_id) {
-      await setSessionCookie({
-        provider: "telegram",
-        provider_user_id: String(res.data.telegram_id ?? ""),
-        django_user_id: res.data.id,
-      })
-    }
-
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка профиля" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    const body = await request.json()
-    const res = await serverApi.patch("/api/v1/auth/me/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка обновления профиля" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/invites/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const res = await serverApi.get("/api/v1/invites/current/", {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка получения кода" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const res = await serverApi.post(
-      "/api/v1/invites/",
-      {},
-      { headers: await buildDjangoHeaders(request) },
-    )
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка создания кода" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/task-logs/[id]/history/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await context.params
-    const headers = await buildDjangoHeaders(request)
-    const res = await serverApi.get(`/api/v1/task-logs/${id}/history/`, { headers })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: "Ошибка получения истории" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/task-logs/bulk-approve/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const headers = await buildDjangoHeaders(request)
-    const res = await serverApi.post("/api/v1/task-logs/bulk-approve/", body, { headers })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: "Ошибка массового подтверждения" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/task-logs/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const headers = await buildDjangoHeaders(request)
-
-    const params: Record<string, any> = {}
-    const childId = searchParams.get("child_id")
-    const date = searchParams.get("date")
-    if (childId) params.child_id = childId
-    if (date) params.date = date
-
-    const res = await serverApi.get("/api/v1/task-logs/", { params, headers })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: "Ошибка получения логов" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const headers = await buildDjangoHeaders(request)
-    const res = await serverApi.post("/api/v1/task-logs/", body, { headers })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка создания лога" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/tasks/close-week/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const res = await serverApi.post("/api/v1/tasks/close-week/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка закрытия недели" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/tasks/my-weekly-report/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const res = await serverApi.get("/api/v1/tasks/my-weekly-report/", {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка отчёта" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/tasks/weekly-review/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const childId = searchParams.get("child_id")
-    const weekStart = searchParams.get("week_start")
-
-    const headers = await buildDjangoHeaders(request)
-
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-    if (weekStart) params.week_start = weekStart
-
-    const res = await serverApi.get("/api/v1/tasks/weekly-review/", { params, headers })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка получения обзора недели" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
 </file>
 
 <file path="frontend/src/app/child/page.tsx">
@@ -5481,185 +5652,6 @@ class JoinByCodeView(APIView):
         return Response(_user_payload(user), status=status.HTTP_200_OK)
 </file>
 
-<file path="frontend/src/app/api/parent/reports/[id]/close/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await context.params
-    const body = await request.json()
-
-    const res = await serverApi.patch(`/api/v1/weekly-reports/${id}/`, body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: "Ошибка при закрытии недели" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/task-logs/[id]/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await context.params
-    const body = await request.json()
-    const headers = await buildDjangoHeaders(request)
-
-    const res = await serverApi.patch(`/api/v1/task-logs/${id}/`, body, { headers })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: "Ошибка обновления статуса лога" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/tasks/[id]/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await context.params
-    const body = await request.json()
-    const res = await serverApi.put(`/api/v1/tasks/${id}/`, body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data || "Ошибка при обновлении задачи" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-
-export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await context.params
-    await serverApi.delete(`/api/v1/tasks/${id}/`, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data || "Ошибка при удалении задачи" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/parent/profile/page.tsx">
-"use client"
-
-import { useMe } from "@/hooks/useMe"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { LogOut, User } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-
-export default function ParentProfilePage() {
-  const { me, ready } = useMe()
-
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-
-      <Card className="border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-center gap-4 p-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary-soft text-brand-warning-strong">
-            <User className="h-8 w-8" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Avatar className="h-16 w-16">
-                <AvatarImage src={me?.avatar_url ?? undefined} />
-                <AvatarFallback className="bg-brand-primary-soft text-brand-warning-strong text-lg">
-                  {(me?.first_name || "?").slice(0, 1)}
-                </AvatarFallback>
-              </Avatar>
-              <Badge
-                variant="secondary"
-                className="bg-brand-primary-soft text-brand-warning-strong"
-              >
-                Родитель
-              </Badge>
-            </div>
-            <span className="text-xs text-text-muted">
-              {me?.telegram_id ? `Telegram ID: ${me.telegram_id}` : "Вход через OAuth"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-text-main">Сессия</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <Button variant="destructive" size="sm" className="h-9 w-full" onClick={handleLogout}>
-            <LogOut className="mr-1.5 h-3.5 w-3.5" />
-            Выйти
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-</file>
-
-<file path="frontend/src/components/auth/NoTelegramScreen.tsx">
-"use client"
-
-import { Button } from "@/components/ui/button"
-
-export function AuthButtons() {
-  return (
-    <div className="flex w-full max-w-xs flex-col gap-2">
-      <Button
-        variant="outline"
-        className="h-11 w-full"
-        onClick={() => (window.location.href = "/api/auth/google")}
-      >
-        Войти через Google
-      </Button>
-
-      <Button
-        variant="outline"
-        className="h-11 w-full"
-        onClick={() => (window.location.href = "/api/auth/vk")}
-      >
-        Войти через VK ID
-      </Button>
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/components/auth/ParentStep.tsx">
 "use client"
 
@@ -6850,125 +6842,6 @@ build = "python manage.py migrate --noinput"
 }
 </file>
 
-<file path="frontend/src/app/api/children/route.ts">
-// frontend/src/app/api/children/route.ts
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const res = await serverApi.get("/api/v1/users/", {
-      params: { is_child: true },
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data || "Ошибка при получении данных" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/parent/reports/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const childId = searchParams.get("child_id")
-    const weekStart = searchParams.get("week_start")
-
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-    if (weekStart) params.week_start = weekStart
-
-    const res = await serverApi.get("/api/v1/tasks/reports-overview/", {
-      params,
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка при получении недельных отчетов" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-
-    // Если пришёл child_id + week_start — создаём/закрываем неделю
-    // через специализированный action (рассчитывает суммы сам).
-    // Иначе — старое поведение: прямое создание WeeklyReport.
-    if (body?.child_id && body?.week_start) {
-      const res = await serverApi.post("/api/v1/tasks/close-week/", body, {
-        headers: await buildDjangoHeaders(request),
-      })
-      return NextResponse.json(res.data)
-    }
-
-    const res = await serverApi.post("/api/v1/weekly-reports/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка при создании/обновлении отчета" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/api/tasks/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const childId = searchParams.get("child_id")
-
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-
-    const res = await serverApi.get("/api/v1/tasks/", {
-      params,
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data || "Ошибка при получении задач" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const res = await serverApi.post("/api/v1/tasks/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data || "Ошибка при создании задачи" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
 <file path="frontend/src/app/child/tasks/page.tsx">
 "use client"
 
@@ -7175,6 +7048,75 @@ export default function ChildTasksPage() {
 }
 </file>
 
+<file path="frontend/src/app/parent/profile/page.tsx">
+"use client"
+
+import { useMe } from "@/hooks/useMe"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { LogOut, User } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+
+export default function ParentProfilePage() {
+  const { me, ready } = useMe()
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+
+      <Card className="border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-center gap-4 p-5">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary-soft text-brand-warning-strong">
+            <User className="h-8 w-8" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <Avatar className="h-16 w-16">
+                <AvatarImage src={me?.avatar_url ?? undefined} />
+                <AvatarFallback className="bg-brand-primary-soft text-brand-warning-strong text-lg">
+                  {(me?.first_name || "?").slice(0, 1)}
+                </AvatarFallback>
+              </Avatar>
+              <Badge
+                variant="secondary"
+                className="bg-brand-primary-soft text-brand-warning-strong"
+              >
+                Родитель
+              </Badge>
+            </div>
+            <span className="text-xs text-text-muted">
+              {me?.telegram_id ? `Telegram ID: ${me.telegram_id}` : "Вход через OAuth"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-text-main">Сессия</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Button variant="destructive" size="sm" className="h-9 w-full" onClick={handleLogout}>
+            <LogOut className="mr-1.5 h-3.5 w-3.5" />
+            Выйти
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/components/auth/ChildStep.tsx">
 "use client"
 
@@ -7245,104 +7187,60 @@ export function ChildStep({ onBack, onJoined }: ChildStepProps) {
 }
 </file>
 
-<file path="frontend/src/services/authApi.ts">
-import { api } from "@/lib/axios"
+<file path="frontend/src/components/auth/NoTelegramScreen.tsx">
+"use client"
 
-export type UserRole = "PARENT" | "CHILD"
+import { Button } from "@/components/ui/button"
 
-export interface MeResponse {
-  id: number
-  telegram_id: number | null
-  first_name: string
-  last_name: string
-  role: UserRole | ""
-  onboarded: boolean
-  family_id: number | null
-  invite_code?: string
-  birth_date?: string | null
-  gender?: "MALE" | "FEMALE" | null
-  family_name?: string | null
-  avatar_url?: string | null 
-}
+export function AuthButtons() {
+  return (
+    <div className="flex w-full max-w-xs flex-col gap-2">
+      <Button
+        variant="outline"
+        className="h-11 w-full"
+        onClick={() => (window.location.href = "/bff/auth/google")}
+      >
+        Войти через Google
+      </Button>
 
-export const authApi = {
-  async me(): Promise<MeResponse> {
-    const res = await api.get("/api/auth/me")
-    return res.data
-  },
-  async registerParent(): Promise<MeResponse> {
-    const res = await api.post("/api/auth/me/register-parent")
-    return res.data
-  },
-  async joinFamily(code: string, role: UserRole): Promise<MeResponse> {
-    const res = await api.post("/api/auth/me/join-family", { code, role })
-    return res.data
-  },
-  async updateMe(
-    data: Partial<
-      Pick<MeResponse, "first_name" | "last_name" | "birth_date" | "gender" | "avatar_url">
-    >,
-  ): Promise<MeResponse> {
-    const res = await api.patch("/api/auth/me", data)
-    return res.data
-  },
+      <Button
+        variant="outline"
+        className="h-11 w-full"
+        onClick={() => (window.location.href = "/bff/auth/vk")}
+      >
+        Войти через VK ID
+      </Button>
+    </div>
+  )
 }
 </file>
 
-<file path="frontend/src/services/childApi.ts">
-import { api } from "@/lib/axios"
-import { LogStatusValue } from "@/types/props"
-
-export const childApi = {
-  async getMyTasks() {
-    const res = await api.get("/api/tasks")
-    return res.data
+<file path="vercel.json">
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "backend",
+          "format": "url",
+          "env": "BACKEND_INTERNAL_URL"
+        }
+      ]
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "django"
+    }
   },
-
-  async getMyTaskLogs() {
-    const res = await api.get("/api/task-logs")
-    return res.data
-  },
-
-  async submitTaskExecution(taskId: number, date: string) {
-    const res = await api.post("/api/task-logs", {
-      task: taskId,
-      date,
-      status: "DONE",
-    })
-    return res.data
-  },
-
-  async getMyWeeklyReport() {
-    const res = await api.get("/api/tasks/my-weekly-report")
-    return res.data
-  },
-
-  async getMyReports() {
-    const res = await api.get("/api/child/reports")
-    return res.data
-  },
-
-  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
-    const res = await api.post("/api/task-logs", data)
-    return res.data
-  },
-
-  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
-    const res = await api.patch(`/api/task-logs/${logId}`, { status })
-    return res.data
-  },
-
-  async getTaskLogHistory(logId: number) {
-    const res = await api.get(`/api/task-logs/${logId}/history`)
-    return res.data
-  },
-  async getWeeklyReview(weekStart?: string) {
-    const params: Record<string, any> = {}
-    if (weekStart) params.week_start = weekStart
-    const res = await api.get("/api/child/weekly-review", { params })
-    return res.data
-  },
+  "rewrites": [
+    { "source": "/api/auth/(.*)", "destination": { "service": "frontend" } },
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ]
 }
 </file>
 
@@ -8123,6 +8021,107 @@ export function TaskLogCard({ log }: TaskLogCardProps) {
       </CardContent>
     </Card>
   )
+}
+</file>
+
+<file path="frontend/src/services/authApi.ts">
+import { api } from "@/lib/axios"
+
+export type UserRole = "PARENT" | "CHILD"
+
+export interface MeResponse {
+  id: number
+  telegram_id: number | null
+  first_name: string
+  last_name: string
+  role: UserRole | ""
+  onboarded: boolean
+  family_id: number | null
+  invite_code?: string
+  birth_date?: string | null
+  gender?: "MALE" | "FEMALE" | null
+  family_name?: string | null
+  avatar_url?: string | null 
+}
+
+export const authApi = {
+  async me(): Promise<MeResponse> {
+    const res = await api.get("/auth/me")
+    return res.data
+  },
+  async registerParent(): Promise<MeResponse> {
+    const res = await api.post("/auth/me/register-parent")
+    return res.data
+  },
+  async joinFamily(code: string, role: UserRole): Promise<MeResponse> {
+    const res = await api.post("/auth/me/join-family", { code, role })
+    return res.data
+  },
+  async updateMe(
+    data: Partial<
+      Pick<MeResponse, "first_name" | "last_name" | "birth_date" | "gender" | "avatar_url">
+    >,
+  ): Promise<MeResponse> {
+    const res = await api.patch("/auth/me", data)
+    return res.data
+  },
+}
+</file>
+
+<file path="frontend/src/services/childApi.ts">
+import { api } from "@/lib/axios"
+import { LogStatusValue } from "@/types/props"
+
+export const childApi = {
+  async getMyTasks() {
+    const res = await api.get("/tasks")
+    return res.data
+  },
+
+  async getMyTaskLogs() {
+    const res = await api.get("/task-logs")
+    return res.data
+  },
+
+  async submitTaskExecution(taskId: number, date: string) {
+    const res = await api.post("/task-logs", {
+      task: taskId,
+      date,
+      status: "DONE",
+    })
+    return res.data
+  },
+
+  async getMyWeeklyReport() {
+    const res = await api.get("/tasks/my-weekly-report")
+    return res.data
+  },
+
+  async getMyReports() {
+    const res = await api.get("/child/reports")
+    return res.data
+  },
+
+  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
+    const res = await api.post("/task-logs", data)
+    return res.data
+  },
+
+  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
+    const res = await api.patch(`/task-logs/${logId}`, { status })
+    return res.data
+  },
+
+  async getTaskLogHistory(logId: number) {
+    const res = await api.get(`/task-logs/${logId}/history`)
+    return res.data
+  },
+  async getWeeklyReview(weekStart?: string) {
+    const params: Record<string, any> = {}
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/child/weekly-review", { params })
+    return res.data
+  },
 }
 </file>
 
@@ -9203,76 +9202,6 @@ export function TaskFormSheet({
 }
 </file>
 
-<file path="frontend/src/lib/axios.ts">
-// frontend/src/lib/axios.ts
-import axios from "axios"
-
-// ─────────────────────────────────────────────────────────────
-// Клиент (браузер) — только относительные пути к своему origin
-// ─────────────────────────────────────────────────────────────
-export const api = axios.create({
-  baseURL: "",
-  timeout: 15_000,
-  headers: { "Content-Type": "application/json" },
-})
-
-api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const tgInitData = (window as any).Telegram?.WebApp?.initData
-    if (tgInitData) {
-      config.headers.Authorization = `tma ${tgInitData}`
-    }
-  }
-  return config
-})
-
-// ─────────────────────────────────────────────────────────────
-// Сервер (Node.js, только для Route Handlers) — к Django
-// ─────────────────────────────────────────────────────────────
-// ВАЖНО: этот блок исполняется при импорте модуля.
-// Если файл попадёт в клиентский бандл — `Buffer` упадёт с
-// ReferenceError, и роут вернёт 500. Поэтому импортировать
-// `serverApi` разрешено ТОЛЬКО из `app/api/**/route.ts`
-// (server-only файлы).
-
-function buildBasicAuth(): string {
-  const user = process.env.BFF_SERVICE_USERNAME ?? ""
-  const pass = process.env.BFF_SERVICE_PASSWORD ?? ""
-  if (!user || !pass) {
-    // Не бросаем ошибку на этапе импорта — иначе весь build упадёт.
-    // Лучше явно ругнуться при первом запросе.
-    return ""
-  }
-  // Buffer доступен только на сервере
-  return "Basic " + Buffer.from(`${user}:${pass}`).toString("base64")
-}
-
-const basicAuth = typeof Buffer !== "undefined" ? buildBasicAuth() : ""
-
-export const serverApi = axios.create({
-  baseURL: process.env.DJANGO_INTERNAL_URL || "http://127.0.0.1:8000",
-  timeout: 15_000,
-  headers: {
-    "Content-Type": "application/json",
-    ...(basicAuth ? { Authorization: basicAuth } : {}),
-  },
-})
-
-serverApi.interceptors.request.use((config) => {
-  if (!basicAuth) {
-    throw new Error(
-      "DJANGO_SUPERUSER_USERNAME / DJANGO_SUPERUSER_PASSWORD не заданы в .env фронтенда",
-    )
-  }
-  return config
-})
-
-export function getTgInitData(): string | null {
-  if (typeof window === "undefined") return null
-  return (window as any).Telegram?.WebApp?.initData || null
-}
-</file>
-
 <file path="backend/config/settings.py">
 """
 Django settings for config project.
@@ -9601,325 +9530,6 @@ def change_task_log_status(log_id, new_status, user):
         recalculate_task_logs_earnings(log.task, start_date, end_date)
 
     return log
-</file>
-
-<file path="frontend/src/app/child/profile/page.tsx">
-"use client"
-
-import { useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { format } from "date-fns"
-import { ru } from "date-fns/locale"
-import {
-  Calendar as CalendarIcon,
-  LogOut,
-  User,
-  Trophy,
-  CalendarDays,
-  Pencil,
-  Check,
-  X,
-} from "lucide-react"
-
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useMe } from "@/hooks/useMe"
-import { childApi } from "@/services/childApi"
-import { authApi } from "@/services/authApi"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
-import { parentApi } from "@/services/parentApi"
-
-function calcAge(birthDate?: string | null): number | null {
-  if (!birthDate) return null
-  const b = new Date(birthDate)
-  if (isNaN(b.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - b.getFullYear()
-  const m = now.getMonth() - b.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
-  return age
-}
-
-export default function ChildProfilePage() {
-  const { me, ready } = useMe()
-  const queryClient = useQueryClient()
-
-  const [isEditing, setIsEditing] = useState(false)
-  const [editForm, setEditForm] = useState({
-    first_name: "",
-    last_name: "",
-    birth_date: undefined as Date | undefined,
-    gender: "" as "MALE" | "FEMALE" | "",
-  })
-
-  const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["child-payouts"],
-    queryFn: () => childApi.getMyReports(),
-  })
-
-  const { data: familyMembers = [] } = useQuery<any[]>({
-    queryKey: ["family-members"],
-    queryFn: () => parentApi.getFamilyMembers(),
-    enabled: !!me?.family_id,
-  })
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (data: any) => authApi.updateMe(data),
-    onSuccess: (updatedData) => {
-      queryClient.setQueryData(["me"], updatedData)
-      // Инвалидируем запрос, чтобы useMe() подтянул свежие данные при следующем рендере
-      queryClient.invalidateQueries({ queryKey: ["me"] })
-      setIsEditing(false)
-    },
-  })
-
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  const startEditing = () => {
-    setEditForm({
-      first_name: me?.first_name || "",
-      last_name: me?.last_name || "",
-      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
-      gender: (me?.gender as "MALE" | "FEMALE") || "",
-    })
-    setIsEditing(true)
-  }
-
-  const saveProfile = () => {
-    updateProfileMutation.mutate({
-      first_name: editForm.first_name,
-      last_name: editForm.last_name,
-      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
-      gender: editForm.gender || null,
-    })
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
-  const age = calcAge(me?.birth_date)
-  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
-
-  const closedReports = (reports as any[]).filter(
-    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
-  )
-  const totalWeeks = closedReports.length
-  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-        {!isEditing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={startEditing}
-            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Изменить
-          </Button>
-        )}
-      </div>
-
-      {/* Карточка с основной информацией */}
-      <Card className="border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-start gap-4 p-5">
-          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
-            <AvatarImage src={me?.avatar_url ?? undefined} />
-            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
-              {(fullName || "?").slice(0, 1)}
-            </AvatarFallback>
-          </Avatar>
-
-          {isEditing ? (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Имя"
-                  value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-                <Input
-                  placeholder="Фамилия"
-                  value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
-                          !editForm.birth_date && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editForm.birth_date
-                          ? format(editForm.birth_date, "dd.MM.yyyy")
-                          : "Дата рождения"}
-                      </Button>
-                    }
-                  />
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={editForm.birth_date}
-                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
-                      autoFocus
-                      captionLayout="dropdown"
-                      startMonth={new Date(2000, 0)}
-                      endMonth={new Date(new Date().getFullYear(), 11)}
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <Select
-                  value={editForm.gender}
-                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
-                >
-                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
-                    <SelectValue placeholder="Пол" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MALE">Мужской</SelectItem>
-                    <SelectItem value="FEMALE">Женский</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsEditing(false)}
-                  className="h-8 text-text-muted"
-                >
-                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={saveProfile}
-                  disabled={updateProfileMutation.isPending}
-                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
-                >
-                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
-                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-text-main">{fullName}</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
-                >
-                  Ребёнок
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                {age !== null && <span>{age} лет</span>}
-                {age !== null && genderLabel && <span>•</span>}
-                {genderLabel && <span>{genderLabel}</span>}
-                {!age && !genderLabel && <span>Данные не заполнены</span>}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Успехи */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <Trophy className="h-4 w-4 text-finance-pending" />
-            Мои успехи
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 pt-0">
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Закрытых недель</span>
-            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
-          </div>
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
-            <span className="text-lg font-bold text-text-main">
-              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Семья */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <CalendarDays className="h-4 w-4 text-text-muted" />
-            Моя семья
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {me?.family_id ? (
-            <div className="flex flex-col gap-3 mt-1">
-              {familyMembers.map((member) => (
-                <div key={member.id} className="flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={member.avatar_url} />
-                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
-                      {member.first_name?.[0] || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-text-main">
-                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
-                        "Без имени"}
-                    </span>
-                    <span className="text-[11px] text-text-muted">
-                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-text-muted">Семья не привязана</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
-        <LogOut className="mr-1.5 h-3.5 w-3.5" />
-        Выйти
-      </Button>
-    </div>
-  )
-}
 </file>
 
 <file path="frontend/src/app/parent/children/page.tsx">
@@ -10728,6 +10338,449 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         return obj.changed_by.avatar_url or None
 </file>
 
+<file path="frontend/src/app/child/profile/page.tsx">
+"use client"
+
+import { useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { format } from "date-fns"
+import { ru } from "date-fns/locale"
+import {
+  Calendar as CalendarIcon,
+  LogOut,
+  User,
+  Trophy,
+  CalendarDays,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react"
+
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useMe } from "@/hooks/useMe"
+import { childApi } from "@/services/childApi"
+import { authApi } from "@/services/authApi"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { parentApi } from "@/services/parentApi"
+
+function calcAge(birthDate?: string | null): number | null {
+  if (!birthDate) return null
+  const b = new Date(birthDate)
+  if (isNaN(b.getTime())) return null
+  const now = new Date()
+  let age = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
+  return age
+}
+
+export default function ChildProfilePage() {
+  const { me, ready } = useMe()
+  const queryClient = useQueryClient()
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    birth_date: undefined as Date | undefined,
+    gender: "" as "MALE" | "FEMALE" | "",
+  })
+
+  const { data: reports = [] } = useQuery<any[]>({
+    queryKey: ["child-payouts"],
+    queryFn: () => childApi.getMyReports(),
+  })
+
+  const { data: familyMembers = [] } = useQuery<any[]>({
+    queryKey: ["family-members"],
+    queryFn: () => parentApi.getFamilyMembers(),
+    enabled: !!me?.family_id,
+  })
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: any) => authApi.updateMe(data),
+    onSuccess: (updatedData) => {
+      queryClient.setQueryData(["me"], updatedData)
+      // Инвалидируем запрос, чтобы useMe() подтянул свежие данные при следующем рендере
+      queryClient.invalidateQueries({ queryKey: ["me"] })
+      setIsEditing(false)
+    },
+  })
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  const startEditing = () => {
+    setEditForm({
+      first_name: me?.first_name || "",
+      last_name: me?.last_name || "",
+      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
+      gender: (me?.gender as "MALE" | "FEMALE") || "",
+    })
+    setIsEditing(true)
+  }
+
+  const saveProfile = () => {
+    updateProfileMutation.mutate({
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
+      gender: editForm.gender || null,
+    })
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
+  const age = calcAge(me?.birth_date)
+  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
+
+  const closedReports = (reports as any[]).filter(
+    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
+  )
+  const totalWeeks = closedReports.length
+  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
+
+  return (
+    <div className="flex flex-col gap-6 pb-20">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startEditing}
+            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Изменить
+          </Button>
+        )}
+      </div>
+
+      {/* Карточка с основной информацией */}
+      <Card className="border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-start gap-4 p-5">
+          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
+            <AvatarImage src={me?.avatar_url ?? undefined} />
+            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
+              {(fullName || "?").slice(0, 1)}
+            </AvatarFallback>
+          </Avatar>
+
+          {isEditing ? (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Имя"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+                <Input
+                  placeholder="Фамилия"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
+                          !editForm.birth_date && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editForm.birth_date
+                          ? format(editForm.birth_date, "dd.MM.yyyy")
+                          : "Дата рождения"}
+                      </Button>
+                    }
+                  />
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editForm.birth_date}
+                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
+                      autoFocus
+                      captionLayout="dropdown"
+                      startMonth={new Date(2000, 0)}
+                      endMonth={new Date(new Date().getFullYear(), 11)}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Select
+                  value={editForm.gender}
+                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
+                >
+                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
+                    <SelectValue placeholder="Пол" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MALE">Мужской</SelectItem>
+                    <SelectItem value="FEMALE">Женский</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  className="h-8 text-text-muted"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveProfile}
+                  disabled={updateProfileMutation.isPending}
+                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
+                >
+                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
+                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1 pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-text-main">{fullName}</span>
+                <Badge
+                  variant="secondary"
+                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
+                >
+                  Ребёнок
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                {age !== null && <span>{age} лет</span>}
+                {age !== null && genderLabel && <span>•</span>}
+                {genderLabel && <span>{genderLabel}</span>}
+                {!age && !genderLabel && <span>Данные не заполнены</span>}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Успехи */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <Trophy className="h-4 w-4 text-finance-pending" />
+            Мои успехи
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 pt-0">
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Закрытых недель</span>
+            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
+          </div>
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
+            <span className="text-lg font-bold text-text-main">
+              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Семья */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <CalendarDays className="h-4 w-4 text-text-muted" />
+            Моя семья
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {me?.family_id ? (
+            <div className="flex flex-col gap-3 mt-1">
+              {familyMembers.map((member) => (
+                <div key={member.id} className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={member.avatar_url} />
+                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
+                      {member.first_name?.[0] || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-text-main">
+                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
+                        "Без имени"}
+                    </span>
+                    <span className="text-[11px] text-text-muted">
+                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">Семья не привязана</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
+        <LogOut className="mr-1.5 h-3.5 w-3.5" />
+        Выйти
+      </Button>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/lib/axios.ts">
+// frontend/src/lib/axios.ts
+import axios from "axios"
+
+// ─────────────────────────────────────────────────────────────
+// Клиент (браузер) — только относительные пути к своему origin
+// ─────────────────────────────────────────────────────────────
+export const api = axios.create({
+  baseURL: "/bff",
+  timeout: 15_000,
+  headers: { "Content-Type": "application/json" },
+})
+
+api.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const tgInitData = (window as any).Telegram?.WebApp?.initData
+    if (tgInitData) {
+      config.headers.Authorization = `tma ${tgInitData}`
+    }
+  }
+  return config
+})
+
+// ─────────────────────────────────────────────────────────────
+// Сервер (Node.js, только для Route Handlers) — к Django
+// ─────────────────────────────────────────────────────────────
+// ВАЖНО: этот блок исполняется при импорте модуля.
+// Если файл попадёт в клиентский бандл — `Buffer` упадёт с
+// ReferenceError, и роут вернёт 500. Поэтому импортировать
+// `serverApi` разрешено ТОЛЬКО из `app/api/**/route.ts`
+// (server-only файлы).
+
+function buildBasicAuth(): string {
+  const user = process.env.BFF_SERVICE_USERNAME ?? ""
+  const pass = process.env.BFF_SERVICE_PASSWORD ?? ""
+  if (!user || !pass) {
+    // Не бросаем ошибку на этапе импорта — иначе весь build упадёт.
+    // Лучше явно ругнуться при первом запросе.
+    return ""
+  }
+  // Buffer доступен только на сервере
+  return "Basic " + Buffer.from(`${user}:${pass}`).toString("base64")
+}
+
+const basicAuth = typeof Buffer !== "undefined" ? buildBasicAuth() : ""
+
+export const serverApi = axios.create({
+  baseURL: process.env.BACKEND_INTERNAL_URL  || "http://127.0.0.1:8000",
+  timeout: 15_000,
+  headers: {
+    "Content-Type": "application/json",
+    ...(basicAuth ? { Authorization: basicAuth } : {}),
+  },
+})
+
+serverApi.interceptors.request.use((config) => {
+  if (!basicAuth) {
+    throw new Error(
+      "DJANGO_SUPERUSER_USERNAME / DJANGO_SUPERUSER_PASSWORD не заданы в .env фронтенда",
+    )
+  }
+  return config
+})
+
+export function getTgInitData(): string | null {
+  if (typeof window === "undefined") return null
+  return (window as any).Telegram?.WebApp?.initData || null
+}
+</file>
+
+<file path="frontend/src/app/layout.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Inter, Cormorant_Garamond } from "next/font/google"
+import "./globals.css"
+import { Navigation } from "@/components/Navigation"
+import Script from "next/script"
+
+const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
+
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500"],
+  variable: "--font-cormorant",
+  display: "swap",
+})
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient())
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp
+    if (tg) {
+      try {
+        tg.ready()
+        tg.expand()
+      } catch {}
+    }
+  }, [])
+
+  return (
+    <html
+      lang="ru"
+      className={`${inter.variable} ${cormorant.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
+      </head>
+      <body
+        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main pb-20`}
+      >
+        <QueryClientProvider client={queryClient}>
+          <main className="mx-auto w-full max-w-md flex-1 px-4 py-6">{children}</main>
+          <Navigation />
+        </QueryClientProvider>
+      </body>
+    </html>
+  )
+}
+</file>
+
 <file path="frontend/src/app/page.tsx">
 "use client"
 
@@ -10802,7 +10855,7 @@ export default function Home() {
     ;(async () => {
       setPhase("checking")
       try {
-        const res = await fetch("/api/auth/state")
+        const res = await fetch("/bff/auth/state")
         const data = await res.json()
         if (cancelled) return
         if (!data?.hasBffSession) {
@@ -10911,191 +10964,6 @@ export default function Home() {
   }
 
   return null
-}
-</file>
-
-<file path="frontend/src/app/layout.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { Inter, Cormorant_Garamond } from "next/font/google"
-import "./globals.css"
-import { Navigation } from "@/components/Navigation"
-import Script from "next/script"
-
-const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
-
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500"],
-  variable: "--font-cormorant",
-  display: "swap",
-})
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient())
-
-  useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp
-    if (tg) {
-      try {
-        tg.ready()
-        tg.expand()
-      } catch {}
-    }
-  }, [])
-
-  return (
-    <html
-      lang="ru"
-      className={`${inter.variable} ${cormorant.variable} h-full antialiased`}
-      suppressHydrationWarning
-    >
-      <head>
-        <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
-      </head>
-      <body
-        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main pb-20`}
-      >
-        <QueryClientProvider client={queryClient}>
-          <main className="mx-auto w-full max-w-md flex-1 px-4 py-6">{children}</main>
-          <Navigation />
-        </QueryClientProvider>
-      </body>
-    </html>
-  )
-}
-</file>
-
-<file path="frontend/src/services/parentApi.ts">
-import { api } from "@/lib/axios"
-import { LogStatusValue } from "@/types/props"
-
-export const parentApi = {
-  // Все запросы — строго на BFF-роуты Next.js (/api/...).
-  // Заголовки авторизации (X-Parent-Telegram-Id и т.п.) подставляются
-  // на стороне Route Handlers, см. AI.md / BFF Pattern.
-
-  async getChildren() {
-    const res = await api.get("/api/children")
-    return res.data
-  },
-
-  async getTasks(childId?: number) {
-    const res = await api.get("/api/tasks", childId ? { params: { child_id: childId } } : undefined)
-    return res.data
-  },
-
-  async createTask(data: {
-    title: string
-    description: string
-    weekly_price: number
-    child: number
-    schedule_type: "FLEXIBLE" | "FIXED"
-    target_count?: number | null
-    target_days?: number[]
-    is_active?: boolean
-  }) {
-    const res = await api.post("/api/tasks", data)
-    return res.data
-  },
-
-  async updateTask(id: number, data: any) {
-    const res = await api.put(`/api/tasks/${id}`, data)
-    return res.data
-  },
-
-  async deleteTask(id: number) {
-    await api.delete(`/api/tasks/${id}`)
-  },
-
-  async getTaskLogs(childId?: number, date?: string) {
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-    if (date) params.date = date
-    const res = await api.get("/api/task-logs", { params })
-    return res.data
-  },
-
-  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
-    const res = await api.post("/api/task-logs", data)
-    return res.data
-  },
-
-  async bulkApproveLogs(logIds: number[]) {
-    const res = await api.post("/api/task-logs/bulk-approve", {
-      log_ids: logIds,
-    })
-    return res.data
-  },
-
-  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
-    const res = await api.patch(`/api/task-logs/${logId}`, { status })
-    return res.data
-  },
-
-  async getWeeklyReports(childId?: number, weekStart?: string) {
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-    if (weekStart) params.week_start = weekStart
-    const res = await api.get("/api/parent/reports", { params })
-    return res.data
-  },
-
-  async closeWeeklyReport(
-    reportId: number,
-    data: { is_payout_confirmed: boolean; manual_adjustment?: number; comment?: string },
-  ) {
-    const res = await api.patch(`/api/parent/reports/${reportId}/close`, data)
-    return res.data
-  },
-
-  async getWeeklyReview(childId: number, weekStart?: string) {
-    const params: Record<string, any> = { child_id: childId }
-    if (weekStart) params.week_start = weekStart
-    const res = await api.get("/api/tasks/weekly-review", { params })
-    return res.data
-  },
-
-  async getTaskLogHistory(logId: number) {
-    const res = await api.get(`/api/task-logs/${logId}/history`)
-    return res.data
-  },
-  async closeWeek(payload: {
-    child_id: number
-    week_start: string
-    is_payout_confirmed: boolean
-    manual_adjustment?: number
-    comment?: string
-  }) {
-    const res = await api.post("/api/tasks/close-week", payload)
-    return res.data
-  },
-  async getCurrentInvite() {
-    const res = await api.get("/api/invites")
-    return res.data as {
-      id: number
-      code: string
-      expires_at: string
-      is_used: boolean
-    }
-  },
-
-  async createInvite() {
-    const res = await api.post("/api/invites")
-    return res.data as {
-      id: number
-      code: string
-      expires_at: string
-      is_used: boolean
-    }
-  },
-
-  async getFamilyMembers() {
-    const res = await api.get("/api/family/members")
-    return res.data
-  },
 }
 </file>
 
@@ -12049,6 +11917,137 @@ export default function ParentReviewPage() {
       )}
     </div>
   )
+}
+</file>
+
+<file path="frontend/src/services/parentApi.ts">
+import { api } from "@/lib/axios"
+import { LogStatusValue } from "@/types/props"
+
+export const parentApi = {
+  // Все запросы — строго на BFF-роуты Next.js (/...).
+  // Заголовки авторизации (X-Parent-Telegram-Id и т.п.) подставляются
+  // на стороне Route Handlers, см. AI.md / BFF Pattern.
+
+  async getChildren() {
+    const res = await api.get("/children")
+    return res.data
+  },
+
+  async getTasks(childId?: number) {
+    const res = await api.get("/tasks", childId ? { params: { child_id: childId } } : undefined)
+    return res.data
+  },
+
+  async createTask(data: {
+    title: string
+    description: string
+    weekly_price: number
+    child: number
+    schedule_type: "FLEXIBLE" | "FIXED"
+    target_count?: number | null
+    target_days?: number[]
+    is_active?: boolean
+  }) {
+    const res = await api.post("/tasks", data)
+    return res.data
+  },
+
+  async updateTask(id: number, data: any) {
+    const res = await api.put(`/tasks/${id}`, data)
+    return res.data
+  },
+
+  async deleteTask(id: number) {
+    await api.delete(`/tasks/${id}`)
+  },
+
+  async getTaskLogs(childId?: number, date?: string) {
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (date) params.date = date
+    const res = await api.get("/task-logs", { params })
+    return res.data
+  },
+
+  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
+    const res = await api.post("/task-logs", data)
+    return res.data
+  },
+
+  async bulkApproveLogs(logIds: number[]) {
+    const res = await api.post("/task-logs/bulk-approve", {
+      log_ids: logIds,
+    })
+    return res.data
+  },
+
+  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
+    const res = await api.patch(`/task-logs/${logId}`, { status })
+    return res.data
+  },
+
+  async getWeeklyReports(childId?: number, weekStart?: string) {
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/parent/reports", { params })
+    return res.data
+  },
+
+  async closeWeeklyReport(
+    reportId: number,
+    data: { is_payout_confirmed: boolean; manual_adjustment?: number; comment?: string },
+  ) {
+    const res = await api.patch(`/parent/reports/${reportId}/close`, data)
+    return res.data
+  },
+
+  async getWeeklyReview(childId: number, weekStart?: string) {
+    const params: Record<string, any> = { child_id: childId }
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/tasks/weekly-review", { params })
+    return res.data
+  },
+
+  async getTaskLogHistory(logId: number) {
+    const res = await api.get(`/task-logs/${logId}/history`)
+    return res.data
+  },
+  async closeWeek(payload: {
+    child_id: number
+    week_start: string
+    is_payout_confirmed: boolean
+    manual_adjustment?: number
+    comment?: string
+  }) {
+    const res = await api.post("/tasks/close-week", payload)
+    return res.data
+  },
+  async getCurrentInvite() {
+    const res = await api.get("/invites")
+    return res.data as {
+      id: number
+      code: string
+      expires_at: string
+      is_used: boolean
+    }
+  },
+
+  async createInvite() {
+    const res = await api.post("/invites")
+    return res.data as {
+      id: number
+      code: string
+      expires_at: string
+      is_used: boolean
+    }
+  },
+
+  async getFamilyMembers() {
+    const res = await api.get("/family/members")
+    return res.data
+  },
 }
 </file>
 
