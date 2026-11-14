@@ -18,6 +18,8 @@ export function Navigation() {
   const pathname = usePathname()
   const { me, ready } = useMe()
   const isSyncing = useLogSyncStore((state) => state.isSyncing)
+  const lastError = useLogSyncStore((s) => s.lastError)
+  const clearError = useLogSyncStore((s) => s.clearError)
 
   if (!ready || !me?.onboarded) return null
 
@@ -37,9 +39,6 @@ export function Navigation() {
   ]
 
   const currentNav = role === "PARENT" ? parentNav : childNav
-
-  const lastError = useLogSyncStore((s) => s.lastError)
-  const clearError = useLogSyncStore((s) => s.clearError)
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-app-surface bg-app-card/90 backdrop-blur-lg">
