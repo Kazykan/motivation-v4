@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { Metadata, Viewport } from "next"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Inter, Cormorant_Garamond } from "next/font/google"
 import "./globals.css"
@@ -15,6 +16,22 @@ const cormorant = Cormorant_Garamond({
   variable: "--font-cormorant",
   display: "swap",
 })
+
+export const metadata: Metadata = {
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Motivation",
+  },
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: "#e9ecef",
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
