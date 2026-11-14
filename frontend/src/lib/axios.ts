@@ -44,7 +44,7 @@ function buildBasicAuth(): string {
 const basicAuth = typeof Buffer !== "undefined" ? buildBasicAuth() : ""
 
 export const serverApi = axios.create({
-  baseURL: process.env.DJANGO_INTERNAL_URL || "http://127.0.0.1:8000",
+  baseURL: process.env.BACKEND_INTERNAL_URL  || "http://127.0.0.1:8000",
   timeout: 15_000,
   headers: {
     "Content-Type": "application/json",
