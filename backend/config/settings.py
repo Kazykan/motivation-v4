@@ -32,7 +32,7 @@ BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
 SECRET_KEY = "django-insecure-e)-%y+@s1y2^#g_5i!b&j9h_^g4k3i+!up4p$#!n(#z=wv$k9a"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ["*"]
 
