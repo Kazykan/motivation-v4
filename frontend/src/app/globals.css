@@ -10,8 +10,6 @@
  * ──────────────────────────────────────────────────────────── */
 @theme inline {
   --font-display: var(--font-cormorant);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
 
   /* ФОНЫ */
   --color-app-bg: #e9ecef; /* Фон страницы */
@@ -52,11 +50,28 @@
   --color-accent-blue: #6ed6e8;
   --color-accent-peach: #f6c1a9;
 
-  /* Радиусы бренда */
-  --radius-card: 24px;
-  --radius-button: 16px;
+  /* shadcn-алиасы (для calendar.tsx / popover.tsx / button.tsx) */
+  --color-background: var(--color-app-bg);
+  --color-foreground: var(--color-text-main);
+  --color-card: var(--color-app-card);
+  --color-card-foreground: var(--color-text-main);
+  --color-popover: var(--color-app-card);
+  --color-popover-foreground: var(--color-text-main);
+  --color-primary: var(--color-brand-action);
+  --color-primary-foreground: var(--color-brand-action-text);
+  --color-secondary: var(--color-app-surface);
+  --color-secondary-foreground: var(--color-text-main);
+  --color-muted: var(--color-app-surface);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-accent: var(--color-app-surface);
+  --color-accent-foreground: var(--color-text-main);
+  --color-destructive: var(--color-finance-negative);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--color-app-surface);
+  --color-input: var(--color-app-surface);
+  --color-ring: var(--color-brand-action);
 
-  /* ── shadcn: подключаем переменные из :root ── */
+  /* Sidebar / charts — оставляем привязку к :root (нужно shadcn) */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -72,26 +87,13 @@
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
 
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
+
+  /* Радиусы бренда */
+  --radius-card: 24px;
+  --radius-button: 16px;
 
   /* Производные радиусы от базового --radius */
   --radius-sm: calc(var(--radius) * 0.6);
@@ -105,8 +107,6 @@
 
 /* ────────────────────────────────────────────────────────────
  * СВЕТЛАЯ ТЕМА
- * Базовый --radius = 16px (совпадает с --radius-button),
- * shadcn-переменные замаплены на бренд-токены.
  * ──────────────────────────────────────────────────────────── */
 :root {
   --radius: 16px;
@@ -114,34 +114,49 @@
   --shadow-soft: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 0 1px 1px rgba(0, 0, 0, 0.02);
   --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
 
-  /* Маппинг shadcn → бренд-токены */
-  --background: #e9ecef; /* = app-bg */
-  --foreground: #1a1a1a; /* = text-main */
+  /* ── CSS-переменные, используемые через var(...) в инлайн-стилях ── */
+  --color-app-bg: #e9ecef;
+  --color-app-card: #ffffff;
+  --color-app-surface: #f4f5f7;
+  --color-text-main: #1a1a1a;
+  --color-text-muted: #8e95a3;
+  --color-brand-action: #9aea1c;
+  --color-brand-action-hover: #85d616;
+  --color-brand-action-text: #1a1a1a;
+  --color-brand-primary-soft: #eafbc9;
+  --color-brand-warning-strong: #b45309;
+  --color-finance-pending: #f59e0b;
+  --color-brand-error-soft: #ffe4e6;
+  --color-brand-error-strong: #be123c;
 
-  --card: #ffffff; /* = app-card */
-  --card-foreground: #1a1a1a;
+  /* ── shadcn-переменные (для совместимости с shadcn-компонентами) ── */
+  --background: var(--color-app-bg);
+  --foreground: var(--color-text-main);
 
-  --popover: #ffffff; /* = app-card */
-  --popover-foreground: #1a1a1a;
+  --card: var(--color-app-card);
+  --card-foreground: var(--color-text-main);
 
-  --primary: #9aea1c; /* = brand-action */
-  --primary-foreground: #1a1a1a; /* = brand-action-text */
+  --popover: var(--color-app-card);
+  --popover-foreground: var(--color-text-main);
 
-  --secondary: #f4f5f7; /* = app-surface */
-  --secondary-foreground: #1a1a1a;
+  --primary: var(--color-brand-action);
+  --primary-foreground: var(--color-brand-action-text);
 
-  --muted: #f4f5f7; /* = app-surface */
-  --muted-foreground: #8e95a3; /* = text-muted */
+  --secondary: var(--color-app-surface);
+  --secondary-foreground: var(--color-text-main);
 
-  --accent: #f4f5f7; /* = app-surface */
-  --accent-foreground: #1a1a1a;
+  --muted: var(--color-app-surface);
+  --muted-foreground: var(--color-text-muted);
 
-  --destructive: #f43f5e; /* = finance-negative */
+  --accent: var(--color-app-surface);
+  --accent-foreground: var(--color-text-main);
+
+  --destructive: var(--color-finance-negative, #f43f5e);
   --destructive-foreground: #ffffff;
 
-  --border: #f4f5f7; /* = app-surface */
-  --input: #f4f5f7;
-  --ring: #9aea1c; /* = brand-action */
+  --border: var(--color-app-surface);
+  --input: var(--color-app-surface);
+  --ring: var(--color-brand-action);
 
   /* Графики (нейтральные) */
   --chart-1: oklch(0.87 0 0);
@@ -159,23 +174,6 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-
-  --color-brand-success: #10b981;
-  --color-brand-success-soft: #d1fae5;
-  --color-brand-success-strong: #047857;
-  --color-brand-warning: #f59e0b;
-  --color-brand-warning-soft: #fef3c7;
-  --color-brand-warning-strong: #b45309;
-  --color-brand-error: #f43f5e;
-  --color-brand-error-soft: #ffe4e6;
-  --color-brand-error-strong: #be123c;
-
-  --color-brand-dark: #1a1a1a;
-  --color-brand-muted: #8e95a3;
-  --color-brand-surface-alt: #f4f5f7;
-  --color-brand-primary: #9aea1c;
-  --color-brand-primary-hover: #85d616;
-  --color-brand-primary-soft: #eafbc9;
 }
 
 /* ────────────────────────────────────────────────────────────

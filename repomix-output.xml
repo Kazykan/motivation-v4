@@ -122,6 +122,7 @@ frontend/src/app/bff/tasks/weekly-review/route.ts
 frontend/src/app/child/balance/page.tsx
 frontend/src/app/child/page.tsx
 frontend/src/app/child/profile/page.tsx
+frontend/src/app/child/profile/ProfileClient.tsx
 frontend/src/app/child/tasks/page.tsx
 frontend/src/app/globals.css
 frontend/src/app/icon.ico
@@ -1764,6 +1765,369 @@ export async function GET(request: Request) {
 }
 </file>
 
+<file path="frontend/src/app/child/profile/ProfileClient.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { format } from "date-fns"
+import {
+  Calendar as CalendarIcon,
+  LogOut,
+  Trophy,
+  CalendarDays,
+  Pencil,
+  Check,
+  X,
+  AlertTriangle,
+} from "lucide-react"
+
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useMe } from "@/hooks/useMe"
+import { childApi } from "@/services/childApi"
+import { authApi } from "@/services/authApi"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { parentApi } from "@/services/parentApi"
+
+function calcAge(birthDate?: string | null): number | null {
+  if (!birthDate) return null
+  const b = new Date(birthDate)
+  if (isNaN(b.getTime())) return null
+  const now = new Date()
+  let age = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
+  return age
+}
+
+export function ProfileClient() {
+  const { me, ready } = useMe()
+  const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  const requireProfile = searchParams.get("require") === "1"
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    birth_date: undefined as Date | undefined,
+    gender: "" as "MALE" | "FEMALE" | "",
+  })
+
+  const { data: reports = [] } = useQuery<any[]>({
+    queryKey: ["child-payouts"],
+    queryFn: () => childApi.getMyReports(),
+  })
+
+  const { data: familyMembers = [] } = useQuery<any[]>({
+    queryKey: ["family-members"],
+    queryFn: () => parentApi.getFamilyMembers(),
+    enabled: !!me?.family_id,
+  })
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: any) => authApi.updateMe(data),
+    onSuccess: (updatedData) => {
+      queryClient.setQueryData(["me"], updatedData)
+      queryClient.invalidateQueries({ queryKey: ["me"] })
+      setIsEditing(false)
+
+      // Если пришли по требованию — убираем флаг, чтобы баннер исчез.
+      if (requireProfile) {
+        router.replace("/child/profile")
+      }
+    },
+  })
+
+  // Авто-открытие редактора, если пришли по требованию и поля не заполнены.
+  useEffect(() => {
+    if (!ready || !me) return
+    if (requireProfile && (!me.birth_date || !me.gender)) {
+      setEditForm({
+        first_name: me.first_name || "",
+        last_name: me.last_name || "",
+        birth_date: me.birth_date ? new Date(me.birth_date) : undefined,
+        gender: (me.gender as "MALE" | "FEMALE") || "",
+      })
+      setIsEditing(true)
+    }
+  }, [ready, me, requireProfile])
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  const startEditing = () => {
+    setEditForm({
+      first_name: me?.first_name || "",
+      last_name: me?.last_name || "",
+      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
+      gender: (me?.gender as "MALE" | "FEMALE") || "",
+    })
+    setIsEditing(true)
+  }
+
+  const saveProfile = () => {
+    updateProfileMutation.mutate({
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
+      gender: editForm.gender || null,
+    })
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
+  const age = calcAge(me?.birth_date)
+  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
+
+  const closedReports = (reports as any[]).filter(
+    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
+  )
+  const totalWeeks = closedReports.length
+  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
+
+  const profileIncomplete = !me?.birth_date || !me?.gender
+
+  return (
+    <div className="flex flex-col gap-6 pb-20">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startEditing}
+            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Изменить
+          </Button>
+        )}
+      </div>
+
+      {requireProfile && profileIncomplete && (
+        <div className="flex items-start gap-2 rounded-xl border border-finance-pending/40 bg-finance-pending/10 p-3 text-[12px] text-finance-pending">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Заполните профиль</span>
+            <span>Нужны дата рождения и пол — без них задания недоступны.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Карточка с основной информацией */}
+      <Card className="border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-start gap-4 p-5">
+          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
+            <AvatarImage src={me?.avatar_url ?? undefined} />
+            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
+              {(fullName || "?").slice(0, 1)}
+            </AvatarFallback>
+          </Avatar>
+
+          {isEditing ? (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Имя"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+                <Input
+                  placeholder="Фамилия"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
+                          !editForm.birth_date && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editForm.birth_date
+                          ? format(editForm.birth_date, "dd.MM.yyyy")
+                          : "Дата рождения"}
+                      </Button>
+                    }
+                  />
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editForm.birth_date}
+                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
+                      autoFocus
+                      captionLayout="dropdown"
+                      startMonth={new Date(2000, 0)}
+                      endMonth={new Date(new Date().getFullYear(), 11)}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Select
+                  value={editForm.gender}
+                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
+                >
+                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
+                    <SelectValue placeholder="Пол" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MALE">Мужской</SelectItem>
+                    <SelectItem value="FEMALE">Женский</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {requireProfile && profileIncomplete && (
+                <p className="text-[11px] text-finance-pending">
+                  Дата рождения и пол обязательны для сохранения.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 mt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  className="h-8 text-text-muted"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveProfile}
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    (requireProfile && profileIncomplete && !editForm.birth_date) ||
+                    (requireProfile && profileIncomplete && !editForm.gender)
+                  }
+                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
+                >
+                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
+                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1 pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-text-main">{fullName}</span>
+                <Badge
+                  variant="secondary"
+                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
+                >
+                  Ребёнок
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                {age !== null && <span>{age} лет</span>}
+                {age !== null && genderLabel && <span>•</span>}
+                {genderLabel && <span>{genderLabel}</span>}
+                {!age && !genderLabel && <span>Данные не заполнены</span>}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Успехи */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <Trophy className="h-4 w-4 text-finance-pending" />
+            Мои успехи
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 pt-0">
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Закрытых недель</span>
+            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
+          </div>
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
+            <span className="text-lg font-bold text-text-main">
+              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Семья */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <CalendarDays className="h-4 w-4 text-text-muted" />
+            Моя семья
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {me?.family_id ? (
+            <div className="flex flex-col gap-3 mt-1">
+              {familyMembers.map((member) => (
+                <div key={member.id} className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={member.avatar_url} />
+                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
+                      {member.first_name?.[0] || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-text-main">
+                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
+                        "Без имени"}
+                    </span>
+                    <span className="text-[11px] text-text-muted">
+                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">Семья не привязана</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
+        <LogOut className="mr-1.5 h-3.5 w-3.5" />
+        Выйти
+      </Button>
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/components/AppShell.tsx">
 // components/AppShell.tsx
 "use client"
@@ -1823,7 +2187,7 @@ export function DebugJsonPanel({ title = "Debug JSON", data }: DebugJsonPanelPro
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
-        <pre className="max-h-[60vh] overflow-auto rounded-md bg-white p-3 text-[11px] leading-tight text-brand-dark">
+        <pre className="max-h-[60vh] overflow-auto rounded-md bg-app-card p-3 text-[11px] leading-tight text-text-main">
           {json}
         </pre>
       </CardContent>
@@ -1875,29 +2239,29 @@ export function OnboardingSlide({ data }: OnboardingSlideProps) {
           className="object-cover"
         />
 
-        {/* Маска: растворяем края в фоне #e9ecef (--color-app-bg) */}
+        {/* Маска: растворяем края в фоне --color-app-bg */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
-            background: "linear-gradient(to bottom, #e9ecef 0%, rgba(233,236,239,0) 22%)",
+            background: "linear-gradient(to bottom, var(--color-app-bg) 0%, transparent 22%)",
           }}
         />
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4"
           style={{
-            background: "linear-gradient(to bottom, rgba(233,236,239,0) 0%, #e9ecef 100%)",
+            background: "linear-gradient(to bottom, transparent 0%, var(--color-app-bg) 100%)",
           }}
         />
         <div
           className="pointer-events-none absolute inset-y-0 left-0 w-12"
           style={{
-            background: "linear-gradient(to right, #e9ecef 0%, rgba(233,236,239,0) 100%)",
+            background: "linear-gradient(to right, var(--color-app-bg) 0%, transparent 100%)",
           }}
         />
         <div
           className="pointer-events-none absolute inset-y-0 right-0 w-12"
           style={{
-            background: "linear-gradient(to left, #e9ecef 0%, rgba(233,236,239,0) 100%)",
+            background: "linear-gradient(to left, var(--color-app-bg) 0%, transparent 100%)",
           }}
         />
       </div>
@@ -1993,13 +2357,8 @@ export function OnboardingSlides({ onDone }: OnboardingSlidesProps) {
 "use client"
 
 import * as React from "react"
-import { cn } from "cn"
-import {
-  DayPicker,
-  getDefaultClassNames,
-  type DayButton,
-  type Locale,
-} from "react-day-picker"
+import { cn } from "@/lib/utils"
+import { DayPicker, getDefaultClassNames, type DayButton, type Locale } from "react-day-picker"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
@@ -2026,136 +2385,105 @@ function Calendar({
         "group/calendar bg-background p-2 [--cell-radius:var(--radius-md)] [--cell-size:--spacing(7)] in-data-[slot=card-content]:bg-transparent in-data-[slot=popover-content]:bg-transparent",
         String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,
         String.raw`rtl:**:[.rdp-button\_previous>svg]:rotate-180`,
-        className
+        className,
       )}
       captionLayout={captionLayout}
       locale={locale}
       formatters={{
-        formatMonthDropdown: (date) =>
-          date.toLocaleString(locale?.code, { month: "short" }),
+        formatMonthDropdown: (date) => date.toLocaleString(locale?.code, { month: "short" }),
         ...formatters,
       }}
       classNames={{
         root: cn("w-fit", defaultClassNames.root),
-        months: cn(
-          "relative flex flex-col gap-4 md:flex-row",
-          defaultClassNames.months
-        ),
+        months: cn("relative flex flex-col gap-4 md:flex-row", defaultClassNames.months),
         month: cn("flex w-full flex-col gap-4", defaultClassNames.month),
         nav: cn(
           "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1",
-          defaultClassNames.nav
+          defaultClassNames.nav,
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
           "size-(--cell-size) p-0 select-none aria-disabled:opacity-50",
-          defaultClassNames.button_previous
+          defaultClassNames.button_previous,
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
           "size-(--cell-size) p-0 select-none aria-disabled:opacity-50",
-          defaultClassNames.button_next
+          defaultClassNames.button_next,
         ),
         month_caption: cn(
           "flex h-(--cell-size) w-full items-center justify-center px-(--cell-size)",
-          defaultClassNames.month_caption
+          defaultClassNames.month_caption,
         ),
         dropdowns: cn(
           "flex h-(--cell-size) w-full items-center justify-center gap-1.5 text-sm font-medium",
-          defaultClassNames.dropdowns
+          defaultClassNames.dropdowns,
         ),
-        dropdown_root: cn(
-          "relative rounded-(--cell-radius)",
-          defaultClassNames.dropdown_root
-        ),
-        dropdown: cn(
-          "absolute inset-0 bg-popover opacity-0",
-          defaultClassNames.dropdown
-        ),
+        dropdown_root: cn("relative rounded-(--cell-radius)", defaultClassNames.dropdown_root),
+        dropdown: cn("absolute inset-0 bg-popover opacity-0", defaultClassNames.dropdown),
         caption_label: cn(
           "font-medium select-none",
           captionLayout === "label"
             ? "text-sm"
             : "flex items-center gap-1 rounded-(--cell-radius) text-sm [&>svg]:size-3.5 [&>svg]:text-muted-foreground",
-          defaultClassNames.caption_label
+          defaultClassNames.caption_label,
         ),
         month_grid: cn("w-full border-collapse", defaultClassNames.month_grid),
         weekdays: cn("flex", defaultClassNames.weekdays),
         weekday: cn(
           "flex-1 rounded-(--cell-radius) text-[0.8rem] font-normal text-muted-foreground select-none",
-          defaultClassNames.weekday
+          defaultClassNames.weekday,
         ),
         week: cn("mt-2 flex w-full", defaultClassNames.week),
-        week_number_header: cn(
-          "w-(--cell-size) select-none",
-          defaultClassNames.week_number_header
-        ),
+        week_number_header: cn("w-(--cell-size) select-none", defaultClassNames.week_number_header),
         week_number: cn(
           "text-[0.8rem] text-muted-foreground select-none",
-          defaultClassNames.week_number
+          defaultClassNames.week_number,
         ),
         day: cn(
           "group/day relative aspect-square h-full w-full rounded-(--cell-radius) p-0 text-center select-none [&:last-child[data-selected=true]_button]:rounded-r-(--cell-radius)",
           props.showWeekNumber
             ? "[&:nth-child(2)[data-selected=true]_button]:rounded-l-(--cell-radius)"
             : "[&:first-child[data-selected=true]_button]:rounded-l-(--cell-radius)",
-          defaultClassNames.day
+          defaultClassNames.day,
         ),
         range_start: cn(
           "relative isolate z-0 rounded-l-(--cell-radius) bg-muted after:absolute after:inset-y-0 after:right-0 after:w-4 after:bg-muted",
-          defaultClassNames.range_start
+          defaultClassNames.range_start,
         ),
         range_middle: cn("rounded-none", defaultClassNames.range_middle),
         range_end: cn(
           "relative isolate z-0 rounded-r-(--cell-radius) bg-muted after:absolute after:inset-y-0 after:left-0 after:w-4 after:bg-muted",
-          defaultClassNames.range_end
+          defaultClassNames.range_end,
         ),
         today: cn(
           "rounded-(--cell-radius) bg-muted text-foreground data-[selected=true]:rounded-none",
-          defaultClassNames.today
+          defaultClassNames.today,
         ),
         outside: cn(
           "text-muted-foreground aria-selected:text-muted-foreground",
-          defaultClassNames.outside
+          defaultClassNames.outside,
         ),
-        disabled: cn(
-          "text-muted-foreground opacity-50",
-          defaultClassNames.disabled
-        ),
+        disabled: cn("text-muted-foreground opacity-50", defaultClassNames.disabled),
         hidden: cn("invisible", defaultClassNames.hidden),
         ...classNames,
       }}
       components={{
         Root: ({ className, rootRef, ...props }) => {
-          return (
-            <div
-              data-slot="calendar"
-              ref={rootRef}
-              className={cn(className)}
-              {...props}
-            />
-          )
+          return <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />
         },
         Chevron: ({ className, orientation, ...props }) => {
           if (orientation === "left") {
-            return (
-              <ChevronLeftIcon className={cn("size-4", className)} {...props} />
-            )
+            return <ChevronLeftIcon className={cn("size-4", className)} {...props} />
           }
 
           if (orientation === "right") {
-            return (
-              <ChevronRightIcon className={cn("size-4", className)} {...props} />
-            )
+            return <ChevronRightIcon className={cn("size-4", className)} {...props} />
           }
 
-          return (
-            <ChevronDownIcon className={cn("size-4", className)} {...props} />
-          )
+          return <ChevronDownIcon className={cn("size-4", className)} {...props} />
         },
-        DayButton: ({ ...props }) => (
-          <CalendarDayButton locale={locale} {...props} />
-        ),
+        DayButton: ({ ...props }) => <CalendarDayButton locale={locale} {...props} />,
         WeekNumber: ({ children, ...props }) => {
           return (
             <td {...props}>
@@ -2203,7 +2531,7 @@ function CalendarDayButton({
       className={cn(
         "relative isolate z-10 flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 border-0 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-(--cell-radius) data-[range-end=true]:rounded-r-(--cell-radius) data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-muted data-[range-middle=true]:text-foreground data-[range-start=true]:rounded-(--cell-radius) data-[range-start=true]:rounded-l-(--cell-radius) data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground dark:hover:text-foreground [&>span]:text-xs [&>span]:opacity-70",
         defaultClassNames.day,
-        className
+        className,
       )}
       {...props}
     />
@@ -2452,7 +2780,7 @@ export {
 
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -2470,10 +2798,7 @@ function PopoverContent({
   sideOffset = 4,
   ...props
 }: PopoverPrimitive.Popup.Props &
-  Pick<
-    PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+  Pick<PopoverPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
@@ -2487,7 +2812,7 @@ function PopoverContent({
           data-slot="popover-content"
           className={cn(
             "z-50 flex w-72 origin-(--transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-            className
+            className,
           )}
           {...props}
         />
@@ -2516,10 +2841,7 @@ function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
   )
 }
 
-function PopoverDescription({
-  className,
-  ...props
-}: PopoverPrimitive.Description.Props) {
+function PopoverDescription({ className, ...props }: PopoverPrimitive.Description.Props) {
   return (
     <PopoverPrimitive.Description
       data-slot="popover-description"
@@ -2529,14 +2851,7 @@ function PopoverDescription({
   )
 }
 
-export {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-}
+export { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger }
 </file>
 
 <file path="frontend/src/hooks/useRequireProfile.ts">
@@ -3521,30 +3836,6 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
         members = User.objects.filter(id__in=user_ids).distinct()
         return Response(UserSerializer(members, many=True).data)
-</file>
-
-<file path="frontend/eslint.config.mjs">
-import { defineConfig, globalIgnores } from "eslint/config"
-import nextVitals from "eslint-config-next/core-web-vitals"
-import nextTs from "eslint-config-next/typescript"
-import { defineConfig, globalIgnores } from "eslint/config"
-import nextVitals from "eslint-config-next/core-web-vitals.js"
-import nextTs from "eslint-config-next/typescript.js"
-
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
-])
-
-export default eslintConfig
 </file>
 
 <file path="frontend/next.config.ts">
@@ -5709,6 +6000,27 @@ class JoinByCodeView(APIView):
         return Response(_user_payload(user), status=status.HTTP_200_OK)
 </file>
 
+<file path="frontend/eslint.config.mjs">
+import { defineConfig, globalIgnores } from "eslint/config"
+import nextVitals from "eslint-config-next/core-web-vitals"
+import nextTs from "eslint-config-next/typescript"
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+])
+
+export default eslintConfig
+</file>
+
 <file path="frontend/src/components/auth/ParentStep.tsx">
 "use client"
 
@@ -7088,6 +7400,7 @@ export function AuthButtons() {
     }
   },
   "rewrites": [
+    { "source": "/admin/(.*)", "destination": { "service": "backend" } },
     { "source": "/api/auth/(.*)", "destination": { "service": "frontend" } },
     { "source": "/api/(.*)", "destination": { "service": "backend" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }
@@ -7379,227 +7692,6 @@ export default function ChildBalancePage() {
           <div className="flex flex-col gap-3">
             {weekLogs.map((log: any) => (
               <TaskLogCard key={log.id} log={log} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-</file>
-
-<file path="frontend/src/app/child/tasks/page.tsx">
-"use client"
-
-import { useMemo, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { childApi } from "@/services/childApi"
-import { useLogSyncStore } from "@/store/useLogSyncStore"
-import { ChildTaskCard } from "@/components/child/ChildTaskCard"
-import { WeekNavigator } from "@/components/WeekNavigator"
-import { CardContent } from "@/components/ui/card"
-import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
-import { formatMoney } from "@/lib/money"
-import { LogStatusValue, ChildWeeklyItem } from "@/types/props"
-import { Check, ClipboardList, Clock3, Wallet } from "lucide-react"
-import Link from "next/link"
-import { useRequireProfile } from "@/hooks/useRequireProfile"
-
-function normalizeItem(raw: any): ChildWeeklyItem {
-  return {
-    ...raw,
-    weeklyPrice: raw.weeklyPrice ?? 0,
-    targetCount: raw.targetCount ?? 0,
-    targetDays: Array.isArray(raw.targetDays) ? raw.targetDays : [],
-    logs: Array.isArray(raw.logs) ? raw.logs : [],
-    weekClosed: !!raw.weekClosed,
-    summary: raw.summary ?? {
-      approvedCount: 0,
-      pendingCount: 0,
-      rejectedCount: 0,
-      calculatedAmount: 0,
-    },
-  }
-}
-
-export default function ChildTasksPage() {
-  const queryClient = useQueryClient()
-  const { queueChange } = useLogSyncStore()
-  const { me, ready: profileReady } = useRequireProfile()
-  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
-  const weekStartIso = toISODate(weekStart)
-  const weekEndIso = toISODate(getWeekEnd(weekStart))
-
-  const childId = me?.id
-
-  const { data: items = [], isLoading } = useQuery<ChildWeeklyItem[]>({
-    queryKey: ["child-weekly-review", childId, weekStartIso],
-    enabled: !!childId,
-    queryFn: async () => {
-      const raw = await childApi.getWeeklyReview(weekStartIso)
-      return (Array.isArray(raw) ? raw : []).map(normalizeItem)
-    },
-  })
-
-  const nextDisabled = useMemo(() => weekStart >= getMonday(new Date()), [weekStart])
-
-  const handleChangeStatus = async (
-    logId: number | null,
-    status: LogStatusValue,
-    taskId: number,
-    date: string,
-  ) => {
-    const key = ["child-weekly-review", childId, weekStartIso]
-
-    const updateCache = (oldData: any) => {
-      if (!oldData) return oldData
-      return (oldData as ChildWeeklyItem[]).map((item) => {
-        if (item.taskId !== taskId || item.weekClosed) return item
-        const idx = item.logs.findIndex((l) => l.date === date)
-        const nextLogs = [...item.logs]
-
-        const runs = item.targetCount || (item.targetDays?.length ?? 1) || 1
-        const pricePerRun = Number(item.weeklyPrice) / runs
-        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
-
-        if (idx >= 0) {
-          nextLogs[idx] = { ...nextLogs[idx], status, earned_amount: earnedAmount }
-        } else {
-          nextLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
-        }
-
-        return { ...item, logs: nextLogs }
-      })
-    }
-
-    queryClient.setQueryData(key, updateCache)
-    queueChange({ logId, taskId, date, status }, queryClient)
-  }
-
-  const totals = useMemo(() => {
-    let canEarn = 0
-    let earned = 0
-    let pending = 0
-
-    for (const item of items) {
-      const isFlexible = item.scheduleType === "FLEXIBLE"
-      const plannedRuns = isFlexible
-        ? Math.max(item.targetCount ?? 0, 1)
-        : Math.max(item.targetDays?.length ?? 0, 1)
-      const pricePerRun = Number(item.weeklyPrice) / plannedRuns
-
-      canEarn += Number(item.weeklyPrice)
-
-      for (const log of item.logs) {
-        if (log.status === "APPROVED") {
-          earned += Number(log.earned_amount ?? 0)
-        } else if (log.status === "DONE") {
-          pending += pricePerRun
-        }
-      }
-    }
-
-    return { canEarn, earned, pending, canStillEarn: Math.max(0, canEarn - earned - pending) }
-  }, [items])
-
-  if (!profileReady) {
-    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
-  }
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold tracking-tight text-text-main">Мои задания</h1>
-          <Link
-            href="/child/balance"
-            className="text-xs font-medium text-brand-action-hover hover:text-brand-action-text"
-          >
-            Кошелёк →
-          </Link>
-        </div>
-
-        <WeekNavigator
-          weekStart={weekStartIso}
-          weekEnd={weekEndIso}
-          onPrev={() => setWeekStart((d) => addWeeks(d, -1))}
-          onNext={() => !nextDisabled && setWeekStart((d) => addWeeks(d, 1))}
-          disableNext={nextDisabled}
-        />
-
-        {/* Сводка недели — светлая карточка */}
-        <div className="rounded-card bg-app-card p-5 shadow-sm border border-app-surface">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-finance-positive/10 text-finance-positive">
-                <Wallet className="h-6 w-6" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-text-main leading-tight">
-                  Моя неделя
-                </span>
-                <span className="text-[11px] text-text-muted">Заданий: {items.length}</span>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                  Заработано
-                </span>
-                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-positive tabular-nums">
-                  <Check className="h-3 w-3 stroke-[2.5]" />
-                  {formatMoney(totals.earned)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                  Ждёт проверки
-                </span>
-                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-pending tabular-nums">
-                  <Clock3 className="h-3 w-3" />
-                  {formatMoney(totals.pending)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                  Можно ещё
-                </span>
-                <span className="text-sm font-semibold text-text-main tabular-nums">
-                  {formatMoney(totals.canStillEarn)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-text-main">Задания на неделю</h2>
-          <span className="text-xs text-text-muted">Все ({items.length})</span>
-        </div>
-
-        {isLoading ? (
-          <div className="py-8 text-center text-sm text-text-muted">Загрузка заданий...</div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center gap-4 rounded-card border border-app-surface bg-app-card p-6 text-center shadow-sm">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-surface text-text-muted">
-              <ClipboardList className="h-8 w-8" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <p className="text-base font-semibold text-text-main">Пока нечего выполнять</p>
-              <p className="max-w-[18rem] text-sm leading-relaxed text-text-muted">
-                Родитель ещё не назначил тебе заданий на эту неделю.
-                <br />
-                Попроси добавить задание — за каждое выполнение начисляются деньги.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {items.map((item) => (
-              <ChildTaskCard key={item.taskId} item={item} onChangeStatus={handleChangeStatus} />
             ))}
           </div>
         )}
@@ -8302,6 +8394,227 @@ class TelegramInitDataAuthentication(authentication.BaseAuthentication):
         return (user, None)
 </file>
 
+<file path="frontend/src/app/child/tasks/page.tsx">
+"use client"
+
+import { useMemo, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { childApi } from "@/services/childApi"
+import { useLogSyncStore } from "@/store/useLogSyncStore"
+import { ChildTaskCard } from "@/components/child/ChildTaskCard"
+import { WeekNavigator } from "@/components/WeekNavigator"
+import { CardContent } from "@/components/ui/card"
+import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
+import { formatMoney } from "@/lib/money"
+import { LogStatusValue, ChildWeeklyItem } from "@/types/props"
+import { Check, ClipboardList, Clock3, Wallet } from "lucide-react"
+import Link from "next/link"
+import { useRequireProfile } from "@/hooks/useRequireProfile"
+
+function normalizeItem(raw: any): ChildWeeklyItem {
+  return {
+    ...raw,
+    weeklyPrice: raw.weeklyPrice ?? 0,
+    targetCount: raw.targetCount ?? 0,
+    targetDays: Array.isArray(raw.targetDays) ? raw.targetDays : [],
+    logs: Array.isArray(raw.logs) ? raw.logs : [],
+    weekClosed: !!raw.weekClosed,
+    summary: raw.summary ?? {
+      approvedCount: 0,
+      pendingCount: 0,
+      rejectedCount: 0,
+      calculatedAmount: 0,
+    },
+  }
+}
+
+export default function ChildTasksPage() {
+  const queryClient = useQueryClient()
+  const { queueChange } = useLogSyncStore()
+  const { me, ready: profileReady } = useRequireProfile()
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const weekStartIso = toISODate(weekStart)
+  const weekEndIso = toISODate(getWeekEnd(weekStart))
+
+  const childId = me?.id
+
+  const { data: items = [], isLoading } = useQuery<ChildWeeklyItem[]>({
+    queryKey: ["child-weekly-review", childId, weekStartIso],
+    enabled: !!childId,
+    queryFn: async () => {
+      const raw = await childApi.getWeeklyReview(weekStartIso)
+      return (Array.isArray(raw) ? raw : []).map(normalizeItem)
+    },
+  })
+
+  const nextDisabled = useMemo(() => weekStart >= getMonday(new Date()), [weekStart])
+
+  const handleChangeStatus = async (
+    logId: number | null,
+    status: LogStatusValue,
+    taskId: number,
+    date: string,
+  ) => {
+    const key = ["child-weekly-review", childId, weekStartIso]
+
+    const updateCache = (oldData: any) => {
+      if (!oldData) return oldData
+      return (oldData as ChildWeeklyItem[]).map((item) => {
+        if (item.taskId !== taskId || item.weekClosed) return item
+        const idx = item.logs.findIndex((l) => l.date === date)
+        const nextLogs = [...item.logs]
+
+        const runs = item.targetCount || (item.targetDays?.length ?? 1) || 1
+        const pricePerRun = Number(item.weeklyPrice) / runs
+        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
+
+        if (idx >= 0) {
+          nextLogs[idx] = { ...nextLogs[idx], status, earned_amount: earnedAmount }
+        } else {
+          nextLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
+        }
+
+        return { ...item, logs: nextLogs }
+      })
+    }
+
+    queryClient.setQueryData(key, updateCache)
+    queueChange({ logId, taskId, date, status }, queryClient)
+  }
+
+  const totals = useMemo(() => {
+    let canEarn = 0
+    let earned = 0
+    let pending = 0
+
+    for (const item of items) {
+      const isFlexible = item.scheduleType === "FLEXIBLE"
+      const plannedRuns = isFlexible
+        ? Math.max(item.targetCount ?? 0, 1)
+        : Math.max(item.targetDays?.length ?? 0, 1)
+      const pricePerRun = Number(item.weeklyPrice) / plannedRuns
+
+      canEarn += Number(item.weeklyPrice)
+
+      for (const log of item.logs) {
+        if (log.status === "APPROVED") {
+          earned += Number(log.earned_amount ?? 0)
+        } else if (log.status === "DONE") {
+          pending += pricePerRun
+        }
+      }
+    }
+
+    return { canEarn, earned, pending, canStillEarn: Math.max(0, canEarn - earned - pending) }
+  }, [items])
+
+  if (!profileReady) {
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
+  }
+
+  return (
+    <div className="flex flex-col gap-6 pb-20">
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold tracking-tight text-text-main">Мои задания</h1>
+          <Link
+            href="/child/balance"
+            className="text-xs font-medium text-brand-action-hover hover:text-brand-action-text"
+          >
+            Кошелёк →
+          </Link>
+        </div>
+
+        <WeekNavigator
+          weekStart={weekStartIso}
+          weekEnd={weekEndIso}
+          onPrev={() => setWeekStart((d) => addWeeks(d, -1))}
+          onNext={() => !nextDisabled && setWeekStart((d) => addWeeks(d, 1))}
+          disableNext={nextDisabled}
+        />
+
+        {/* Сводка недели — светлая карточка */}
+        <div className="rounded-card bg-app-card p-5 shadow-sm border border-app-surface">
+          <CardContent className="p-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-finance-positive/10 text-finance-positive">
+                <Wallet className="h-6 w-6" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-text-main leading-tight">
+                  Моя неделя
+                </span>
+                <span className="text-[11px] text-text-muted">Заданий: {items.length}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Заработано
+                </span>
+                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-positive tabular-nums">
+                  <Check className="h-3 w-3 stroke-[2.5]" />
+                  {formatMoney(totals.earned)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Ждёт проверки
+                </span>
+                <span className="flex items-center justify-center gap-1 text-sm font-semibold text-finance-pending tabular-nums">
+                  <Clock3 className="h-3 w-3" />
+                  {formatMoney(totals.pending)}
+                </span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-text-muted">
+                  Можно ещё
+                </span>
+                <span className="text-sm font-semibold text-text-main tabular-nums">
+                  {formatMoney(totals.canStillEarn)}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-text-main">Задания на неделю</h2>
+          <span className="text-xs text-text-muted">Все ({items.length})</span>
+        </div>
+
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-text-muted">Загрузка заданий...</div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 rounded-card border border-app-surface bg-app-card p-6 text-center shadow-sm">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-app-surface text-text-muted">
+              <ClipboardList className="h-8 w-8" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-base font-semibold text-text-main">Пока нечего выполнять</p>
+              <p className="max-w-[18rem] text-sm leading-relaxed text-text-muted">
+                Родитель ещё не назначил тебе заданий на эту неделю.
+                <br />
+                Попроси добавить задание — за каждое выполнение начисляются деньги.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {items.map((item) => (
+              <ChildTaskCard key={item.taskId} item={item} onChangeStatus={handleChangeStatus} />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/app/globals.css">
 /* frontend/src/app/globals.css */
 @import "tailwindcss";
@@ -8322,6 +8635,15 @@ class TelegramInitDataAuthentication(authentication.BaseAuthentication):
   --color-app-bg: #e9ecef; /* Фон страницы */
   --color-app-card: #ffffff; /* Фон карточек */
   --color-app-surface: #f4f5f7; /* Внутренние блоки (календарь, итоги) */
+  --color-primary: var(--color-brand-action);
+  --color-primary-foreground: var(--color-brand-action-text);
+  --color-muted: var(--color-app-surface);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-foreground: var(--color-text-main);
+  --color-background: var(--color-app-bg);
+  --color-popover: var(--color-app-card);
+  --color-popover-foreground: var(--color-text-main);
+  --color-ring: var(--color-brand-action);
 
   /* ТЕКСТ */
   --color-text-main: #1a1a1a;
@@ -10501,369 +10823,6 @@ export function getTgInitData(): string | null {
 }
 </file>
 
-<file path="frontend/src/app/child/profile/page.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { format } from "date-fns"
-import {
-  Calendar as CalendarIcon,
-  LogOut,
-  Trophy,
-  CalendarDays,
-  Pencil,
-  Check,
-  X,
-  AlertTriangle,
-} from "lucide-react"
-
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useMe } from "@/hooks/useMe"
-import { childApi } from "@/services/childApi"
-import { authApi } from "@/services/authApi"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
-import { parentApi } from "@/services/parentApi"
-
-function calcAge(birthDate?: string | null): number | null {
-  if (!birthDate) return null
-  const b = new Date(birthDate)
-  if (isNaN(b.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - b.getFullYear()
-  const m = now.getMonth() - b.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
-  return age
-}
-
-export default function ChildProfilePage() {
-  const { me, ready } = useMe()
-  const queryClient = useQueryClient()
-  const searchParams = useSearchParams()
-  const router = useRouter()
-
-  const requireProfile = searchParams.get("require") === "1"
-
-  const [isEditing, setIsEditing] = useState(false)
-  const [editForm, setEditForm] = useState({
-    first_name: "",
-    last_name: "",
-    birth_date: undefined as Date | undefined,
-    gender: "" as "MALE" | "FEMALE" | "",
-  })
-
-  const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["child-payouts"],
-    queryFn: () => childApi.getMyReports(),
-  })
-
-  const { data: familyMembers = [] } = useQuery<any[]>({
-    queryKey: ["family-members"],
-    queryFn: () => parentApi.getFamilyMembers(),
-    enabled: !!me?.family_id,
-  })
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (data: any) => authApi.updateMe(data),
-    onSuccess: (updatedData) => {
-      queryClient.setQueryData(["me"], updatedData)
-      queryClient.invalidateQueries({ queryKey: ["me"] })
-      setIsEditing(false)
-
-      // Если пришли по требованию — убираем флаг, чтобы баннер исчез.
-      if (requireProfile) {
-        router.replace("/child/profile")
-      }
-    },
-  })
-
-  // Авто-открытие редактора, если пришли по требованию и поля не заполнены.
-  useEffect(() => {
-    if (!ready || !me) return
-    if (requireProfile && (!me.birth_date || !me.gender)) {
-      setEditForm({
-        first_name: me.first_name || "",
-        last_name: me.last_name || "",
-        birth_date: me.birth_date ? new Date(me.birth_date) : undefined,
-        gender: (me.gender as "MALE" | "FEMALE") || "",
-      })
-      setIsEditing(true)
-    }
-  }, [ready, me, requireProfile])
-
-  const handleLogout = async () => {
-    await fetch("/bff/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  const startEditing = () => {
-    setEditForm({
-      first_name: me?.first_name || "",
-      last_name: me?.last_name || "",
-      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
-      gender: (me?.gender as "MALE" | "FEMALE") || "",
-    })
-    setIsEditing(true)
-  }
-
-  const saveProfile = () => {
-    updateProfileMutation.mutate({
-      first_name: editForm.first_name,
-      last_name: editForm.last_name,
-      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
-      gender: editForm.gender || null,
-    })
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
-  const age = calcAge(me?.birth_date)
-  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
-
-  const closedReports = (reports as any[]).filter(
-    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
-  )
-  const totalWeeks = closedReports.length
-  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
-
-  const profileIncomplete = !me?.birth_date || !me?.gender
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-        {!isEditing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={startEditing}
-            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Изменить
-          </Button>
-        )}
-      </div>
-
-      {requireProfile && profileIncomplete && (
-        <div className="flex items-start gap-2 rounded-xl border border-finance-pending/40 bg-finance-pending/10 p-3 text-[12px] text-finance-pending">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="flex flex-col gap-0.5">
-            <span className="font-semibold">Заполните профиль</span>
-            <span>Нужны дата рождения и пол — без них задания недоступны.</span>
-          </div>
-        </div>
-      )}
-
-      {/* Карточка с основной информацией */}
-      <Card className="border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-start gap-4 p-5">
-          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
-            <AvatarImage src={me?.avatar_url ?? undefined} />
-            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
-              {(fullName || "?").slice(0, 1)}
-            </AvatarFallback>
-          </Avatar>
-
-          {isEditing ? (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Имя"
-                  value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-                <Input
-                  placeholder="Фамилия"
-                  value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
-                          !editForm.birth_date && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editForm.birth_date
-                          ? format(editForm.birth_date, "dd.MM.yyyy")
-                          : "Дата рождения"}
-                      </Button>
-                    }
-                  />
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={editForm.birth_date}
-                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
-                      autoFocus
-                      captionLayout="dropdown"
-                      startMonth={new Date(2000, 0)}
-                      endMonth={new Date(new Date().getFullYear(), 11)}
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <Select
-                  value={editForm.gender}
-                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
-                >
-                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
-                    <SelectValue placeholder="Пол" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MALE">Мужской</SelectItem>
-                    <SelectItem value="FEMALE">Женский</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {requireProfile && profileIncomplete && (
-                <p className="text-[11px] text-finance-pending">
-                  Дата рождения и пол обязательны для сохранения.
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 mt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsEditing(false)}
-                  className="h-8 text-text-muted"
-                >
-                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={saveProfile}
-                  disabled={
-                    updateProfileMutation.isPending ||
-                    (requireProfile && profileIncomplete && !editForm.birth_date) ||
-                    (requireProfile && profileIncomplete && !editForm.gender)
-                  }
-                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
-                >
-                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
-                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-text-main">{fullName}</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
-                >
-                  Ребёнок
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                {age !== null && <span>{age} лет</span>}
-                {age !== null && genderLabel && <span>•</span>}
-                {genderLabel && <span>{genderLabel}</span>}
-                {!age && !genderLabel && <span>Данные не заполнены</span>}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Успехи */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <Trophy className="h-4 w-4 text-finance-pending" />
-            Мои успехи
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 pt-0">
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Закрытых недель</span>
-            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
-          </div>
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
-            <span className="text-lg font-bold text-text-main">
-              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Семья */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <CalendarDays className="h-4 w-4 text-text-muted" />
-            Моя семья
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {me?.family_id ? (
-            <div className="flex flex-col gap-3 mt-1">
-              {familyMembers.map((member) => (
-                <div key={member.id} className="flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={member.avatar_url} />
-                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
-                      {member.first_name?.[0] || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-text-main">
-                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
-                        "Без имени"}
-                    </span>
-                    <span className="text-[11px] text-text-muted">
-                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-text-muted">Семья не привязана</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
-        <LogOut className="mr-1.5 h-3.5 w-3.5" />
-        Выйти
-      </Button>
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/app/page.tsx">
 "use client"
 
@@ -11723,6 +11682,21 @@ class WeeklyReport(models.Model):
         """
 
         return self.calculated_amount + self.manual_adjustment
+</file>
+
+<file path="frontend/src/app/child/profile/page.tsx">
+import { Suspense } from "react"
+import { ProfileClient } from "./ProfileClient"
+
+export default function ChildProfilePage() {
+  return (
+    <Suspense
+      fallback={<div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>}
+    >
+      <ProfileClient />
+    </Suspense>
+  )
+}
 </file>
 
 <file path="frontend/src/app/parent/review/page.tsx">

@@ -19,6 +19,7 @@
     }
   },
   "rewrites": [
+    { "source": "/admin/(.*)", "destination": { "service": "backend" } },
     { "source": "/api/auth/(.*)", "destination": { "service": "frontend" } },
     { "source": "/api/(.*)", "destination": { "service": "backend" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }

@@ -17,29 +17,29 @@ export function OnboardingSlide({ data }: OnboardingSlideProps) {
           className="object-cover"
         />
 
-        {/* Маска: растворяем края в фоне #e9ecef (--color-app-bg) */}
+        {/* Маска: растворяем края в фоне --color-app-bg */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
-            background: "linear-gradient(to bottom, #e9ecef 0%, rgba(233,236,239,0) 22%)",
+            background: "linear-gradient(to bottom, var(--color-app-bg) 0%, transparent 22%)",
           }}
         />
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4"
           style={{
-            background: "linear-gradient(to bottom, rgba(233,236,239,0) 0%, #e9ecef 100%)",
+            background: "linear-gradient(to bottom, transparent 0%, var(--color-app-bg) 100%)",
           }}
         />
         <div
           className="pointer-events-none absolute inset-y-0 left-0 w-12"
           style={{
-            background: "linear-gradient(to right, #e9ecef 0%, rgba(233,236,239,0) 100%)",
+            background: "linear-gradient(to right, var(--color-app-bg) 0%, transparent 100%)",
           }}
         />
         <div
           className="pointer-events-none absolute inset-y-0 right-0 w-12"
           style={{
-            background: "linear-gradient(to left, #e9ecef 0%, rgba(233,236,239,0) 100%)",
+            background: "linear-gradient(to left, var(--color-app-bg) 0%, transparent 100%)",
           }}
         />
       </div>

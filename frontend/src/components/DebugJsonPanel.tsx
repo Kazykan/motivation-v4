@@ -26,7 +26,7 @@ export function DebugJsonPanel({ title = "Debug JSON", data }: DebugJsonPanelPro
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
-        <pre className="max-h-[60vh] overflow-auto rounded-md bg-white p-3 text-[11px] leading-tight text-brand-dark">
+        <pre className="max-h-[60vh] overflow-auto rounded-md bg-app-card p-3 text-[11px] leading-tight text-text-main">
           {json}
         </pre>
       </CardContent>
