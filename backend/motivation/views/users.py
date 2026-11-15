@@ -42,7 +42,8 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         Возвращает всех членов семьи текущего пользователя:
         и родителей, и детей.
         """
-        if _is_bff(request) or not _is_authenticated(request):
+        # Исправление: убрали проверку _is_bff(request), чтобы запросы через BFF с авторизованным пользователем не блокировались
+        if not _is_authenticated(request):
             return Response({"detail": "Требуется аутентификация."}, status=403)
 
         user = request.user
