@@ -13,6 +13,7 @@ dependencies = [
     "django-stubs==6.1.2",
     "djangorestframework-stubs==3.18.1",
     "dj-database-url==3.1.2",
+    "whitenoise>=6.6.0"
 ]
 
 [tool.mypy]
@@ -25,4 +26,4 @@ django_settings_module = "config.settings"
 entrypoint = "config.wsgi:application"
 
 [tool.vercel.scripts]
-build = "python manage.py migrate --noinput"
+build = "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py ensure_superuser"
