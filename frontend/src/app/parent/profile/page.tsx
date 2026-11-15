@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { LogOut, User } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
 
 export default function ParentProfilePage() {
   const { me, ready } = useMe()
@@ -49,6 +50,7 @@ export default function ParentProfilePage() {
           </div>
         </CardContent>
       </Card>
+      <PushNotificationSettings />
 
       <Card className="border-app-surface bg-app-card">
         <CardHeader className="pb-2">

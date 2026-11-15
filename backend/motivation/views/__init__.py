@@ -5,6 +5,7 @@ from .users import UserViewSet
 from .task_logs import TaskLogViewSet
 from .reports import WeeklyReportViewSet
 from .permissions import ServiceOrUserPermission
+from .push import PushSubscribeView, PushUnsubscribeView, PushTestView
 
 __all__ = [
     "OAuthLoginView",
@@ -17,4 +18,7 @@ __all__ = [
     "TaskLogViewSet",
     "WeeklyReportViewSet",
     "ServiceOrUserPermission",
+    "PushSubscribeView",
+    "PushUnsubscribeView",
+    "PushTestView",
 ]

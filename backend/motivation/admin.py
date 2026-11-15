@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
+    PushSubscription,
     User,
     FamilyGroup,
     FamilyMembership,
@@ -108,3 +109,9 @@ class WeeklyReportAdmin(admin.ModelAdmin):
         "is_payout_confirmed",
     )
     list_filter = ("status", "is_payout_confirmed")
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "endpoint", "created_at")
+    search_fields = ("user__username", "user__email", "endpoint")

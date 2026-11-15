@@ -34,6 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
 import { parentApi } from "@/services/parentApi"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
 
 function calcAge(birthDate?: string | null): number | null {
   if (!birthDate) return null
@@ -350,6 +351,7 @@ export function ProfileClient() {
           )}
         </CardContent>
       </Card>
+      <PushNotificationSettings />
 
       <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
         <LogOut className="mr-1.5 h-3.5 w-3.5" />

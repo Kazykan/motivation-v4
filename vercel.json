@@ -18,6 +18,10 @@
       "framework": "django"
     }
   },
+  "crons": [
+    { "path": "/api/v1/cron/weekly/", "schedule": "0 18 * * 0" },
+    { "path": "/api/v1/cron/daily/", "schedule": "0 19 * * *" }
+  ],
   "rewrites": [
     { "source": "/admin/(.*)", "destination": { "service": "backend" } },
     { "source": "/static/(.*)", "destination": { "service": "backend" } },

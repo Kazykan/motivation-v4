@@ -59,14 +59,17 @@ backend/motivation/migrations/0001_initial.py
 backend/motivation/models.py
 backend/motivation/serializers.py
 backend/motivation/services/__init__.py
+backend/motivation/services/push.py
 backend/motivation/services/task_logs.py
 backend/motivation/services/weekly_reports.py
 backend/motivation/tests.py
 backend/motivation/urls.py
 backend/motivation/views/__init__.py
 backend/motivation/views/auth.py
+backend/motivation/views/cron.py
 backend/motivation/views/family.py
 backend/motivation/views/permissions.py
+backend/motivation/views/push.py
 backend/motivation/views/reports.py
 backend/motivation/views/task_logs.py
 backend/motivation/views/tasks.py
@@ -93,6 +96,7 @@ frontend/public/illustrations/onboarding-4.png
 frontend/public/illustrations/onboarding-5.png
 frontend/public/illustrations/steppe-hero.png
 frontend/public/manifest.json
+frontend/public/sw.js
 frontend/README.md
 frontend/src/app/bff/auth/callback/google/route.ts
 frontend/src/app/bff/auth/callback/vk/route.ts
@@ -110,6 +114,9 @@ frontend/src/app/bff/family/members/route.ts
 frontend/src/app/bff/invites/route.ts
 frontend/src/app/bff/parent/reports/[id]/close/route.ts
 frontend/src/app/bff/parent/reports/route.ts
+frontend/src/app/bff/push/subscribe/route.ts
+frontend/src/app/bff/push/test/route.ts
+frontend/src/app/bff/push/unsubscribe/route.ts
 frontend/src/app/bff/task-logs/[id]/history/route.ts
 frontend/src/app/bff/task-logs/[id]/route.ts
 frontend/src/app/bff/task-logs/bulk-approve/route.ts
@@ -154,6 +161,7 @@ frontend/src/components/onboarding/OnboardingSlides.tsx
 frontend/src/components/parent/ChildFilter.tsx
 frontend/src/components/parent/ReviewTaskDetail.tsx
 frontend/src/components/ParentReviewCard.tsx
+frontend/src/components/PushNotificationSettings.tsx
 frontend/src/components/TaskCard.tsx
 frontend/src/components/TaskCardForParent.tsx
 frontend/src/components/TaskFormSheet.tsx
@@ -200,6 +208,483 @@ vercel.json
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="backend/motivation/services/push.py">
+from datetime import date, timedelta
+import json
+from pywebpush import webpush, WebPushException
+from django.conf import settings
+from motivation.models import PushSubscription, User, Task, TaskLog, WeeklyReport
+
+
+def send_weekly_report_reminders() -> int:
+    """Напоминание родителям закрыть неделю (по воскресеньям)."""
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    sent = 0
+    parents = User.objects.filter(role=User.Role.PARENT)
+    for parent in parents.iterator():
+        # есть ли у родителя хотя бы один ребёнок с незакрытой неделей
+        has_open = (
+            WeeklyReport.objects.filter(
+                child__family_memberships__family__family_memberships__user=parent,
+                start_date=week_start,
+            )
+            .exclude(status=WeeklyReport.Status.CLOSED)
+            .exists()
+        )
+        if not has_open:
+            continue
+        sent += send_push_to_user(
+            parent,
+            "Итоги недели",
+            "Пора проверить задания ребёнка и закрыть неделю.",
+            url="/parent/reports",
+        )
+    return sent
+
+
+def send_daily_task_reminders() -> int:
+    """Ежедневное напоминание ребёнку о незакрытых заданиях (вечер)."""
+    today = date.today()
+    weekday = today.isoweekday()  # 1..7
+    sent = 0
+    tasks = Task.objects.filter(is_active=True).select_related("child")
+    for task in tasks.iterator():
+        if task.schedule_type == Task.ScheduleType.WEEKLY_DAYS:
+            if weekday not in (task.target_days or []):
+                continue
+        already = (
+            TaskLog.objects.filter(
+                task=task, date=today, status=TaskLog.Status.DONE_BY_CHILD
+            ).exists()
+            or TaskLog.objects.filter(
+                task=task, date=today, status=TaskLog.Status.APPROVED
+            ).exists()
+        )
+        if already:
+            continue
+        sent += send_push_to_user(
+            task.child,
+            "Не забудь про задание",
+            f"«{task.title}» ещё не отмечено сегодня.",
+            url="/child/tasks",
+        )
+    return sent
+
+
+def send_push_to_user(user, title, body, url="/") -> int:
+    sent = 0
+    for sub in PushSubscription.objects.filter(user=user):
+        payload = json.dumps({"title": title, "body": body, "url": url})
+        try:
+            webpush(
+                subscription_info={...},
+                data=payload,
+                vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": settings.VAPID_ADMIN_EMAIL},
+            )
+            sent += 1
+        except WebPushException as e:
+            if e.response is not None and e.response.status_code == 410:
+                sub.delete()  # подписка истекла
+    return sent
+</file>
+
+<file path="backend/motivation/views/cron.py">
+from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
+import os
+
+from motivation.services.push import send_daily_task_reminders, send_weekly_report_reminders
+
+
+# views/cron.py
+class CronDispatchView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def _check_auth(self, request):
+        expected = os.environ.get("CRON_SECRET")
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            header = header[len("Bearer "):]
+        else:
+            header = request.headers.get("X-Cron-Secret")
+        return bool(expected and header == expected)
+
+    def get(self, request, job):  # Vercel Cron
+        return self._dispatch(request, job)
+
+    def post(self, request, job):  # для ручного/внешнего вызова
+        return self._dispatch(request, job)
+
+    def _dispatch(self, request, job):
+        if not self._check_auth(request):
+            return Response({"detail": "forbidden"}, status=403)
+        if job == "weekly":
+            return Response({"job": job, "sent": send_weekly_report_reminders()})
+        if job == "daily":
+            return Response({"job": job, "sent": send_daily_task_reminders()})
+        return Response({"detail": "unknown job"}, status=404)
+</file>
+
+<file path="backend/motivation/views/push.py">
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from backend.motivation.services.push import send_push_to_user
+from motivation.models import PushSubscription
+from .permissions import ServiceOrUserPermission, _is_authenticated
+
+
+class PushSubscribeView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        endpoint = request.data.get("endpoint")
+        p256dh = request.data.get("p256dh")
+        auth = request.data.get("auth")
+
+        if not endpoint or not p256dh or not auth:
+            return Response(
+                {"detail": "endpoint, p256dh и auth обязательны."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sub, _ = PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
+        )
+        return Response({"id": sub.id}, status=status.HTTP_200_OK)
+
+
+class PushUnsubscribeView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        endpoint = request.data.get("endpoint")
+        if not endpoint:
+            return Response(
+                {"detail": "endpoint обязателен."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class PushTestView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        sent = send_push_to_user(
+            request.user,
+            "Проверка уведомлений",
+            "Push-уведомления работают 🎉",
+            url="/",
+        )
+        if sent == 0:
+            return Response(
+                {"detail": "Нет активных подписок. Включите уведомления."},
+                status=400,
+            )
+        return Response({"ok": True, "sent": sent})
+</file>
+
+<file path="frontend/public/sw.js">
+self.addEventListener("push", function (event) {
+  if (!event.data) return
+
+  const data = event.data.json()
+  const title = data.title || "Motivation"
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: { url: data.url || "/" },
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close()
+  const targetUrl = event.notification.data?.url || "/"
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(targetUrl) && "focus" in client) {
+          return client.focus()
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl)
+      }
+    }),
+  )
+})
+</file>
+
+<file path="frontend/src/app/bff/push/subscribe/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/push/subscribe/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка подписки на push" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/push/test/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const res = await serverApi.post(
+      "/api/v1/push/test/",
+      {},
+      {
+        headers: await buildDjangoHeaders(request),
+      },
+    )
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка отправки" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/push/unsubscribe/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/push/unsubscribe/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка отписки от push" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/components/PushNotificationSettings.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Bell, Share, Send } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { api } from "@/lib/axios"
+
+const [sending, setSending] = useState(false)
+const [testMsg, setTestMsg] = useState<string | null>(null)
+
+const handleTest = async () => {
+  setSending(true)
+  setTestMsg(null)
+  try {
+    await api.post("/push/test")
+    setTestMsg("Уведомление отправлено")
+  } catch (e: any) {
+    setTestMsg(e.response?.data?.error || "Не удалось отправить")
+  } finally {
+    setSending(false)
+  }
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
+export function PushNotificationSettings() {
+  const [status, setStatus] = useState<
+    "loading" | "unsupported" | "ios-browser" | "denied" | "ready"
+  >("loading")
+  const [isSubscribed, setIsSubscribed] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as any).standalone === true
+
+    if (isIos && !isStandalone) {
+      setStatus("ios-browser")
+      return
+    }
+
+    if (
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window) ||
+      !("Notification" in window)
+    ) {
+      setStatus("unsupported")
+      return
+    }
+
+    if (Notification.permission === "denied") {
+      setStatus("denied")
+      return
+    }
+
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        setIsSubscribed(!!sub)
+        setStatus("ready")
+      })
+      .catch(() => setStatus("unsupported"))
+  }, [])
+
+  const handleToggle = async (checked: boolean) => {
+    if (busy) return
+    setBusy(true)
+
+    try {
+      const reg = await navigator.serviceWorker.ready
+
+      if (checked) {
+        // Подписка
+        const permission = await Notification.requestPermission()
+        if (permission !== "granted") {
+          setStatus(permission === "denied" ? "denied" : "ready")
+          setIsSubscribed(false)
+          return
+        }
+
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        })
+
+        const json = sub.toJSON()
+        await api.post("/push/subscribe", {
+          endpoint: json.endpoint,
+          p256dh: json.keys?.p256dh,
+          auth: json.keys?.auth,
+        })
+
+        setIsSubscribed(true)
+      } else {
+        // Отписка
+        const sub = await reg.pushManager.getSubscription()
+        if (sub) {
+          await api.post("/push/unsubscribe", { endpoint: sub.endpoint })
+          await sub.unsubscribe()
+        }
+        setIsSubscribed(false)
+      }
+    } catch (e) {
+      console.error("Ошибка управления подпиской:", e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (status === "loading" || status === "unsupported") return null
+
+  return (
+    <Card className="border-app-surface bg-app-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+          <Bell className="h-4 w-4 text-text-muted" />
+          Уведомления
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {status === "ios-browser" && (
+          <div className="flex items-start gap-2 rounded-xl bg-app-surface p-3 text-xs text-text-muted">
+            <Share className="mt-0.5 h-4 w-4 shrink-0 text-text-main" />
+            <span>
+              Чтобы включить уведомления на iPhone, нажмите <strong>«Поделиться»</strong> внизу
+              экрана и выберите <strong>«На экран Домой»</strong>.
+            </span>
+          </div>
+        )}
+
+        {status === "denied" && (
+          <p className="text-xs text-finance-negative">
+            Уведомления заблокированы в настройках браузера или телефона. Разрешите их в настройках
+            устройства.
+          </p>
+        )}
+
+        {status === "ready" && (
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-text-main">Push-уведомления</span>
+              <span className="text-xs text-text-muted">
+                Напоминания о заданиях и итогах недели
+              </span>
+            </div>
+            <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 h-8 gap-1.5"
+              disabled={!isSubscribed || sending}
+              onClick={handleTest}
+            >
+              <Send className="h-3.5 w-3.5" />
+              {sending ? "Отправка…" : "Отправить тест"}
+            </Button>
+            {testMsg && <p className="mt-2 text-[11px] text-text-muted">{testMsg}</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+</file>
 
 <file path="backend/config/__init__.py">
 
@@ -351,6 +836,7 @@ from .users import UserViewSet
 from .task_logs import TaskLogViewSet
 from .reports import WeeklyReportViewSet
 from .permissions import ServiceOrUserPermission
+from .push import PushSubscribeView, PushUnsubscribeView, PushTestView
 
 __all__ = [
     "OAuthLoginView",
@@ -363,6 +849,9 @@ __all__ = [
     "TaskLogViewSet",
     "WeeklyReportViewSet",
     "ServiceOrUserPermission",
+    "PushSubscribeView",
+    "PushUnsubscribeView",
+    "PushTestView",
 ]
 </file>
 
@@ -1802,6 +2291,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
 import { parentApi } from "@/services/parentApi"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
 
 function calcAge(birthDate?: string | null): number | null {
   if (!birthDate) return null
@@ -2118,6 +2608,7 @@ export function ProfileClient() {
           )}
         </CardContent>
       </Card>
+      <PushNotificationSettings />
 
       <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
         <LogOut className="mr-1.5 h-3.5 w-3.5" />
@@ -3236,12 +3727,17 @@ def close_week(
 <file path="backend/motivation/urls.py">
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
+from backend.motivation.views.push import PushTestView
+from motivation.views.cron import CronDispatchView
 from .views import (
     UserViewSet,
     FamilyInviteCodeViewSet,
     TaskViewSet,
     TaskLogViewSet,
     WeeklyReportViewSet,
+    PushSubscribeView,
+    PushUnsubscribeView,
 )
 
 
@@ -3252,8 +3748,13 @@ router.register(r"tasks", TaskViewSet, basename="task")
 router.register(r"task-logs", TaskLogViewSet, basename="task-log")
 router.register(r"weekly-reports", WeeklyReportViewSet, basename="weekly-report")
 
+
 urlpatterns = [
     path("", include(router.urls)),
+    path("cron/<str:job>/", CronDispatchView.as_view()),
+    path("push/subscribe/", PushSubscribeView.as_view(), name="push-subscribe"),
+    path("push/unsubscribe/", PushUnsubscribeView.as_view(), name="push-unsubscribe"),
+    path("push/test/", PushTestView.as_view(), name="push-test"),
 ]
 </file>
 
@@ -3414,66 +3915,6 @@ class TaskLogViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-</file>
-
-<file path="backend/motivation/views/users.py">
-from django.db.models import QuerySet
-from rest_framework import viewsets
-
-from motivation.models import User, FamilyMembership
-from rest_framework.response import Response
-from motivation.serializers import UserSerializer
-from rest_framework.decorators import action
-from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
-from .family import _family_child_ids
-
-
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [ServiceOrUserPermission]
-    serializer_class = UserSerializer
-
-    def get_queryset(self) -> QuerySet:
-        request = self.request
-        queryset = User.objects.all()
-
-        if _is_bff(request) or not _is_authenticated(request):
-            is_child_param = request.query_params.get("is_child")
-            if is_child_param is not None:
-                is_child = is_child_param.lower() in ("true", "1")
-                role_val = User.Role.CHILD if is_child else User.Role.PARENT
-                queryset = queryset.filter(role=role_val)
-            return queryset
-
-        user = request.user
-
-        if getattr(user, "role", None) == User.Role.CHILD:
-            return queryset.filter(id=user.pk)
-
-        if getattr(user, "role", None) == User.Role.PARENT:
-            child_ids = _family_child_ids(user)
-            return queryset.filter(id__in=child_ids)
-
-        return queryset.none()
-
-    @action(detail=False, methods=["get"], url_path="family-members")
-    def family_members(self, request):
-        """
-        Возвращает всех членов семьи текущего пользователя:
-        и родителей, и детей.
-        """
-        if _is_bff(request) or not _is_authenticated(request):
-            return Response({"detail": "Требуется аутентификация."}, status=403)
-
-        user = request.user
-        family_ids = FamilyMembership.objects.filter(user=user).values_list(
-            "family_id", flat=True
-        )
-        user_ids = FamilyMembership.objects.filter(
-            family_id__in=family_ids
-        ).values_list("user_id", flat=True)
-
-        members = User.objects.filter(id__in=user_ids).distinct()
-        return Response(UserSerializer(members, many=True).data)
 </file>
 
 <file path="frontend/next.config.ts">
@@ -5334,6 +5775,7 @@ urlpatterns = [
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
+    PushSubscription,
     User,
     FamilyGroup,
     FamilyMembership,
@@ -5441,6 +5883,12 @@ class WeeklyReportAdmin(admin.ModelAdmin):
         "is_payout_confirmed",
     )
     list_filter = ("status", "is_payout_confirmed")
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "endpoint", "created_at")
+    search_fields = ("user__username", "user__email", "endpoint")
 </file>
 
 <file path="backend/motivation/migrations/0001_initial.py">
@@ -5646,7 +6094,6 @@ from motivation.models import User, Task, TaskLog, WeeklyReport
 
 class WeeklyReportBusinessLogicTests(APITestCase):
     def setUp(self):
-        # Создаем родителя и ребенка
         self.parent = User.objects.create_user(
             username="parent_user",
             password="password123",
@@ -5660,7 +6107,6 @@ class WeeklyReportBusinessLogicTests(APITestCase):
             first_name="Тимур",
         )
 
-        # Создаем активное задание для ребенка
         self.task = Task.objects.create(
             child=self.child,
             created_by=self.parent,
@@ -5674,26 +6120,22 @@ class WeeklyReportBusinessLogicTests(APITestCase):
         self.report_url = reverse("weekly-report-list")
 
     def test_weekly_report_calculation_and_final_sum(self):
-        """Проверка корректности расчета суммы по логам и ручных корректировок."""
-        start = date(2026, 10, 12)  # Понедельник
-        end = date(2026, 10, 18)  # Воскресенье
+        start = date(2026, 10, 12)
+        end = date(2026, 10, 18)
 
-        # Создаем отчет
         report = WeeklyReport.objects.create(
             child=self.child,
             start_date=start,
             end_date=end,
             status=WeeklyReport.Status.REVIEW,
-            calculated_amount=Decimal("280.00"),  # 4 выполнения из 5
-            manual_adjustment=Decimal("50.00"),  # Бонус за старание
+            calculated_amount=Decimal("280.00"),
+            manual_adjustment=Decimal("50.00"),
             comment="Отличная неделя",
         )
 
-        # Проверка вычисляемого свойства final_sum
         self.assertEqual(report.final_sum, Decimal("330.00"))
 
     def test_child_can_view_only_own_reports(self):
-        """Ребенок видит только свои недельные отчеты."""
         other_child = User.objects.create_user(
             username="other_child", password="password123", role=User.Role.CHILD
         )
@@ -5707,17 +6149,14 @@ class WeeklyReportBusinessLogicTests(APITestCase):
             end_date=date(2026, 10, 18),
         )
 
-        # Авторизуемся как ребенок
         self.client.force_authenticate(user=self.child)
         response = self.client.get(self.report_url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Ребенок должен видеть ровно 1 отчет (свой)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["child"], self.child.id)
+        self.assertEqual(response.data[0]["child"], self.child.pk)
 
     def test_parent_can_view_all_reports(self):
-        """Родитель видит отчеты всех детей."""
         WeeklyReport.objects.create(
             child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
         )
@@ -5762,13 +6201,13 @@ class WeeklyReviewViewTests(APITestCase):
         )
 
         response = self.client.get(
-            self.url, {"child_id": self.child.id, "week_start": "2025-10-20"}
+            self.url, {"child_id": self.child.pk, "week_start": "2025-10-20"}
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["taskId"], self.task.id)
+        self.assertEqual(data[0]["taskId"], self.task.pk)
         self.assertEqual(data[0]["summary"]["approvedCount"], 1)
         self.assertEqual(len(data[0]["logs"]), 1)
 
@@ -5782,7 +6221,7 @@ class WeeklyReviewViewTests(APITestCase):
     def test_weekly_review_invalid_date_format(self):
         self.client.force_authenticate(user=self.parent)
         response = self.client.get(
-            self.url, {"child_id": self.child.id, "week_start": "invalid-date"}
+            self.url, {"child_id": self.child.pk, "week_start": "invalid-date"}
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -5793,7 +6232,7 @@ class WeeklyReviewViewTests(APITestCase):
         other_child = User.objects.create_user(
             username="empty_child", role=User.Role.CHILD
         )
-        response = self.client.get(self.url, {"child_id": other_child.id})
+        response = self.client.get(self.url, {"child_id": other_child.pk})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), [])
@@ -5998,6 +6437,67 @@ class JoinByCodeView(APIView):
         user.role = role
         user.save(update_fields=["role"])
         return Response(_user_payload(user), status=status.HTTP_200_OK)
+</file>
+
+<file path="backend/motivation/views/users.py">
+from django.db.models import QuerySet
+from rest_framework import viewsets
+
+from motivation.models import User, FamilyMembership
+from rest_framework.response import Response
+from motivation.serializers import UserSerializer
+from rest_framework.decorators import action
+from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
+from .family import _family_child_ids
+
+
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [ServiceOrUserPermission]
+    serializer_class = UserSerializer
+
+    def get_queryset(self) -> QuerySet:
+        request = self.request
+        queryset = User.objects.all()
+
+        if _is_bff(request) or not _is_authenticated(request):
+            is_child_param = request.query_params.get("is_child")
+            if is_child_param is not None:
+                is_child = is_child_param.lower() in ("true", "1")
+                role_val = User.Role.CHILD if is_child else User.Role.PARENT
+                queryset = queryset.filter(role=role_val)
+            return queryset
+
+        user = request.user
+
+        if getattr(user, "role", None) == User.Role.CHILD:
+            return queryset.filter(id=user.pk)
+
+        if getattr(user, "role", None) == User.Role.PARENT:
+            child_ids = _family_child_ids(user)
+            return queryset.filter(id__in=child_ids)
+
+        return queryset.none()
+
+    @action(detail=False, methods=["get"], url_path="family-members")
+    def family_members(self, request):
+        """
+        Возвращает всех членов семьи текущего пользователя:
+        и родителей, и детей.
+        """
+        # Исправление: убрали проверку _is_bff(request), чтобы запросы через BFF с авторизованным пользователем не блокировались
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется аутентификация."}, status=403)
+
+        user = request.user
+        family_ids = FamilyMembership.objects.filter(user=user).values_list(
+            "family_id", flat=True
+        )
+        user_ids = FamilyMembership.objects.filter(
+            family_id__in=family_ids
+        ).values_list("user_id", flat=True)
+
+        members = User.objects.filter(id__in=user_ids).distinct()
+        return Response(UserSerializer(members, many=True).data)
 </file>
 
 <file path="frontend/eslint.config.mjs">
@@ -7189,6 +7689,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { LogOut, User } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
 
 export default function ParentProfilePage() {
   const { me, ready } = useMe()
@@ -7232,6 +7733,7 @@ export default function ParentProfilePage() {
           </div>
         </CardContent>
       </Card>
+      <PushNotificationSettings />
 
       <Card className="border-app-surface bg-app-card">
         <CardHeader className="pb-2">
@@ -7363,7 +7865,8 @@ dependencies = [
     "django-stubs==6.1.2",
     "djangorestframework-stubs==3.18.1",
     "dj-database-url==3.1.2",
-    "whitenoise>=6.6.0"
+    "whitenoise>=6.6.0",
+    "pywebpush==2.5.0"
 ]
 
 [tool.mypy]
@@ -7391,6 +7894,7 @@ dotenv==0.9.9
 django-stubs==6.1.2
 djangorestframework-stubs==3.18.1
 dj-database-url==3.1.2
+pywebpush==2.5.0
 </file>
 
 <file path="frontend/AI.md">
@@ -9404,6 +9908,10 @@ export function TaskFormSheet({
       "framework": "django"
     }
   },
+  "crons": [
+    { "path": "/bff/cron/weekly", "schedule": "0 18 * * 0" },
+    { "path": "/bff/cron/daily", "schedule": "0 19 * * *" }
+  ],
   "rewrites": [
     { "source": "/admin/(.*)", "destination": { "service": "backend" } },
     { "source": "/static/(.*)", "destination": { "service": "backend" } },
@@ -9428,6 +9936,91 @@ from motivation.models import TaskLog, TaskLogHistory, User, WeeklyReport
 
 def _week_start(d):
     return d - timezone.timedelta(days=d.weekday())
+
+
+def _parents_of_child(child: User):
+    """Все родители, состоящие в тех же семьях, что и ребёнок."""
+    family_ids = FamilyMembership.objects.filter(user=child).values_list(
+        "family_id", flat=True
+    )
+    return User.objects.filter(
+        role=User.Role.PARENT,
+        family_memberships__family_id__in=family_ids,
+    ).distinct()
+
+
+def _notify_parents_about_submission(log: TaskLog) -> None:
+    """Push родителям, когда ребёнок отметил задание (DONE_BY_CHILD).
+
+    Не бросает исключений: push не должен ломать основной флоу.
+    """
+    child = log.task.child
+    child_name = child.first_name or child.username or "Ребёнок"
+    title = "Задание на проверку"
+    body = f"{child_name} отметил «{log.task.title}»."
+
+    for parent in _parents_of_child(child):
+        try:
+            send_push_to_user(parent, title, body, url="/parent/review")
+        except Exception:
+            logger.exception("push to parent %s failed", parent.id)
+
+
+def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
+    """Проверяет права пользователя на смену статуса лога."""
+    if not (user and user.is_authenticated):
+        return
+
+    is_child = getattr(user, "role", None) == User.Role.CHILD
+    is_parent = getattr(user, "role", None) == User.Role.PARENT
+
+    if is_child and log.task.child.pk != user.id:
+        raise PermissionDenied("Ребёнок не может изменять чужие задания.")
+    if is_child and new_status in (
+        TaskLog.Status.APPROVED,
+        TaskLog.Status.REJECTED,
+    ):
+        raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
+    if not is_child and not is_parent:
+        raise PermissionDenied("Роль не задана.")
+
+
+def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
+    """Записывает историю, обновляет поля лога, пересчитывает earnings."""
+    from django.contrib.auth.models import (
+        AnonymousUser,
+    )  # локально, чтобы не тянуть в модуль
+
+    old_status = log.status
+
+    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
+    changed_by_user = None if is_anon else user
+    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
+
+    TaskLogHistory.objects.create(
+        log=log,
+        old_status=old_status,
+        new_status=new_status,
+        changed_by=changed_by_user,
+    )
+
+    log.status = new_status
+    log.updated_by = changed_by_user
+    log.updated_by_parent = is_parent_user
+
+    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
+
+    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
+        log.earned_amount = Decimal("0.00")
+        update_fields.append("earned_amount")
+
+    log.save(update_fields=update_fields)
+
+    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
+    if log.task.pk:
+        start_date = log.date - timezone.timedelta(days=log.date.weekday())
+        end_date = start_date + timezone.timedelta(days=6)
+        recalculate_task_logs_earnings(log.task, start_date, end_date)
 
 
 def is_week_closed(task, log_date) -> bool:
@@ -9506,18 +10099,7 @@ def change_task_log_status(log_id, new_status, user):
     """
     log = TaskLog.objects.select_for_update().get(id=log_id)
 
-    if user and user.is_authenticated:
-        is_child = getattr(user, "role", None) == User.Role.CHILD
-        is_parent = getattr(user, "role", None) == User.Role.PARENT
-        if is_child and log.task.child.pk != user.id:
-            raise PermissionDenied("Ребёнок не может изменять чужие задания.")
-        if is_child and new_status in (
-            TaskLog.Status.APPROVED,
-            TaskLog.Status.REJECTED,
-        ):
-            raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
-        if not is_child and not is_parent:
-            raise PermissionDenied("Роль не задана.")
+    _check_status_change_permission(log, new_status, user)
 
     if new_status not in TaskLog.Status.values:
         raise ValueError("Недопустимый статус выполнения.")
@@ -9526,40 +10108,18 @@ def change_task_log_status(log_id, new_status, user):
         return log
 
     assert_not_future(log.date)
-
     assert_week_open(log.task, log.date)
 
     old_status = log.status
 
-    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
+    _apply_status_change(log, new_status, user)
 
-    changed_by_user = None if is_anon else user
-    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
-
-    TaskLogHistory.objects.create(
-        log=log,
-        old_status=old_status,
-        new_status=new_status,
-        changed_by=changed_by_user,
-    )
-
-    log.status = new_status
-    log.updated_by = changed_by_user
-    log.updated_by_parent = is_parent_user
-
-    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
-
-    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
-        log.earned_amount = Decimal("0.00")
-        update_fields.append("earned_amount")
-
-    log.save(update_fields=update_fields)
-
-    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
-    if log.task.pk:
-        start_date = log.date - timezone.timedelta(days=log.date.weekday())
-        end_date = start_date + timezone.timedelta(days=6)
-        recalculate_task_logs_earnings(log.task, start_date, end_date)
+    # Push родителям: только при переходе в DONE_BY_CHILD.
+    if (
+        old_status != TaskLog.Status.DONE_BY_CHILD
+        and new_status == TaskLog.Status.DONE_BY_CHILD
+    ):
+        _notify_parents_about_submission(log)
 
     return log
 </file>
@@ -10847,6 +11407,9 @@ load_dotenv(BASE_DIR / ".env")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
 BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "mailto:admin@example.com")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
@@ -11678,6 +12241,29 @@ class WeeklyReport(models.Model):
         """
 
         return self.calculated_amount + self.manual_adjustment
+
+
+class PushSubscription(models.Model):
+    """Отправка уведомлений через Web Push API для конкретного пользователя."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+        verbose_name="Пользователь",
+    )
+    # Endpoint и ключи безопасности, которые присылает браузер при подписке
+    endpoint = models.TextField(unique=True, verbose_name="Push Endpoint")
+    p256dh = models.CharField(max_length=255, verbose_name="P256dh Key")
+    auth = models.CharField(max_length=255, verbose_name="Auth Key")
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        verbose_name = "Web Push Подписка"
+        verbose_name_plural = "Web Push Подписки"
+
+    def __str__(self):
+        return f"Push для {self.user.username} ({self.pk})"
 </file>
 
 <file path="frontend/src/app/child/profile/page.tsx">

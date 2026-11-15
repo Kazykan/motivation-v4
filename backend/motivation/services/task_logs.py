@@ -13,6 +13,91 @@ def _week_start(d):
     return d - timezone.timedelta(days=d.weekday())
 
 
+def _parents_of_child(child: User):
+    """Все родители, состоящие в тех же семьях, что и ребёнок."""
+    family_ids = FamilyMembership.objects.filter(user=child).values_list(
+        "family_id", flat=True
+    )
+    return User.objects.filter(
+        role=User.Role.PARENT,
+        family_memberships__family_id__in=family_ids,
+    ).distinct()
+
+
+def _notify_parents_about_submission(log: TaskLog) -> None:
+    """Push родителям, когда ребёнок отметил задание (DONE_BY_CHILD).
+
+    Не бросает исключений: push не должен ломать основной флоу.
+    """
+    child = log.task.child
+    child_name = child.first_name or child.username or "Ребёнок"
+    title = "Задание на проверку"
+    body = f"{child_name} отметил «{log.task.title}»."
+
+    for parent in _parents_of_child(child):
+        try:
+            send_push_to_user(parent, title, body, url="/parent/review")
+        except Exception:
+            logger.exception("push to parent %s failed", parent.id)
+
+
+def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
+    """Проверяет права пользователя на смену статуса лога."""
+    if not (user and user.is_authenticated):
+        return
+
+    is_child = getattr(user, "role", None) == User.Role.CHILD
+    is_parent = getattr(user, "role", None) == User.Role.PARENT
+
+    if is_child and log.task.child.pk != user.id:
+        raise PermissionDenied("Ребёнок не может изменять чужие задания.")
+    if is_child and new_status in (
+        TaskLog.Status.APPROVED,
+        TaskLog.Status.REJECTED,
+    ):
+        raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
+    if not is_child and not is_parent:
+        raise PermissionDenied("Роль не задана.")
+
+
+def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
+    """Записывает историю, обновляет поля лога, пересчитывает earnings."""
+    from django.contrib.auth.models import (
+        AnonymousUser,
+    )  # локально, чтобы не тянуть в модуль
+
+    old_status = log.status
+
+    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
+    changed_by_user = None if is_anon else user
+    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
+
+    TaskLogHistory.objects.create(
+        log=log,
+        old_status=old_status,
+        new_status=new_status,
+        changed_by=changed_by_user,
+    )
+
+    log.status = new_status
+    log.updated_by = changed_by_user
+    log.updated_by_parent = is_parent_user
+
+    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
+
+    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
+        log.earned_amount = Decimal("0.00")
+        update_fields.append("earned_amount")
+
+    log.save(update_fields=update_fields)
+
+    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
+    if log.task.pk:
+        start_date = log.date - timezone.timedelta(days=log.date.weekday())
+        end_date = start_date + timezone.timedelta(days=6)
+        recalculate_task_logs_earnings(log.task, start_date, end_date)
+
+
 def is_week_closed(task, log_date) -> bool:
     """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
     start = _week_start(log_date)
@@ -89,18 +174,7 @@ def change_task_log_status(log_id, new_status, user):
     """
     log = TaskLog.objects.select_for_update().get(id=log_id)
 
-    if user and user.is_authenticated:
-        is_child = getattr(user, "role", None) == User.Role.CHILD
-        is_parent = getattr(user, "role", None) == User.Role.PARENT
-        if is_child and log.task.child.pk != user.id:
-            raise PermissionDenied("Ребёнок не может изменять чужие задания.")
-        if is_child and new_status in (
-            TaskLog.Status.APPROVED,
-            TaskLog.Status.REJECTED,
-        ):
-            raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
-        if not is_child and not is_parent:
-            raise PermissionDenied("Роль не задана.")
+    _check_status_change_permission(log, new_status, user)
 
     if new_status not in TaskLog.Status.values:
         raise ValueError("Недопустимый статус выполнения.")
@@ -109,39 +183,17 @@ def change_task_log_status(log_id, new_status, user):
         return log
 
     assert_not_future(log.date)
-
     assert_week_open(log.task, log.date)
 
     old_status = log.status
 
-    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
+    _apply_status_change(log, new_status, user)
 
-    changed_by_user = None if is_anon else user
-    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
-
-    TaskLogHistory.objects.create(
-        log=log,
-        old_status=old_status,
-        new_status=new_status,
-        changed_by=changed_by_user,
-    )
-
-    log.status = new_status
-    log.updated_by = changed_by_user
-    log.updated_by_parent = is_parent_user
-
-    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
-
-    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
-        log.earned_amount = Decimal("0.00")
-        update_fields.append("earned_amount")
-
-    log.save(update_fields=update_fields)
-
-    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
-    if log.task.pk:
-        start_date = log.date - timezone.timedelta(days=log.date.weekday())
-        end_date = start_date + timezone.timedelta(days=6)
-        recalculate_task_logs_earnings(log.task, start_date, end_date)
+    # Push родителям: только при переходе в DONE_BY_CHILD.
+    if (
+        old_status != TaskLog.Status.DONE_BY_CHILD
+        and new_status == TaskLog.Status.DONE_BY_CHILD
+    ):
+        _notify_parents_about_submission(log)
 
     return log

@@ -670,3 +670,26 @@ class WeeklyReport(models.Model):
         """
 
         return self.calculated_amount + self.manual_adjustment
+
+
+class PushSubscription(models.Model):
+    """Отправка уведомлений через Web Push API для конкретного пользователя."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+        verbose_name="Пользователь",
+    )
+    # Endpoint и ключи безопасности, которые присылает браузер при подписке
+    endpoint = models.TextField(unique=True, verbose_name="Push Endpoint")
+    p256dh = models.CharField(max_length=255, verbose_name="P256dh Key")
+    auth = models.CharField(max_length=255, verbose_name="Auth Key")
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        verbose_name = "Web Push Подписка"
+        verbose_name_plural = "Web Push Подписки"
+
+    def __str__(self):
+        return f"Push для {self.user.username} ({self.pk})"
