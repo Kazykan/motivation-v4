@@ -7,22 +7,6 @@ import { Bell, Share, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/axios"
 
-const [sending, setSending] = useState(false)
-const [testMsg, setTestMsg] = useState<string | null>(null)
-
-const handleTest = async () => {
-  setSending(true)
-  setTestMsg(null)
-  try {
-    await api.post("/push/test")
-    setTestMsg("Уведомление отправлено")
-  } catch (e: any) {
-    setTestMsg(e.response?.data?.error || "Не удалось отправить")
-  } finally {
-    setSending(false)
-  }
-}
-
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
@@ -40,6 +24,22 @@ export function PushNotificationSettings() {
   >("loading")
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  const [sending, setSending] = useState(false)
+  const [testMsg, setTestMsg] = useState<string | null>(null)
+
+  const handleTest = async () => {
+    setSending(true)
+    setTestMsg(null)
+    try {
+      await api.post("/push/test")
+      setTestMsg("Уведомление отправлено")
+    } catch (e: any) {
+      setTestMsg(e.response?.data?.error || "Не удалось отправить")
+    } finally {
+      setSending(false)
+    }
+  }
 
   useEffect(() => {
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)

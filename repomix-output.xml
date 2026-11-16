@@ -209,483 +209,6 @@ vercel.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="backend/motivation/services/push.py">
-from datetime import date, timedelta
-import json
-from pywebpush import webpush, WebPushException
-from django.conf import settings
-from motivation.models import PushSubscription, User, Task, TaskLog, WeeklyReport
-
-
-def send_weekly_report_reminders() -> int:
-    """Напоминание родителям закрыть неделю (по воскресеньям)."""
-    today = date.today()
-    week_start = today - timedelta(days=today.weekday())
-    sent = 0
-    parents = User.objects.filter(role=User.Role.PARENT)
-    for parent in parents.iterator():
-        # есть ли у родителя хотя бы один ребёнок с незакрытой неделей
-        has_open = (
-            WeeklyReport.objects.filter(
-                child__family_memberships__family__family_memberships__user=parent,
-                start_date=week_start,
-            )
-            .exclude(status=WeeklyReport.Status.CLOSED)
-            .exists()
-        )
-        if not has_open:
-            continue
-        sent += send_push_to_user(
-            parent,
-            "Итоги недели",
-            "Пора проверить задания ребёнка и закрыть неделю.",
-            url="/parent/reports",
-        )
-    return sent
-
-
-def send_daily_task_reminders() -> int:
-    """Ежедневное напоминание ребёнку о незакрытых заданиях (вечер)."""
-    today = date.today()
-    weekday = today.isoweekday()  # 1..7
-    sent = 0
-    tasks = Task.objects.filter(is_active=True).select_related("child")
-    for task in tasks.iterator():
-        if task.schedule_type == Task.ScheduleType.WEEKLY_DAYS:
-            if weekday not in (task.target_days or []):
-                continue
-        already = (
-            TaskLog.objects.filter(
-                task=task, date=today, status=TaskLog.Status.DONE_BY_CHILD
-            ).exists()
-            or TaskLog.objects.filter(
-                task=task, date=today, status=TaskLog.Status.APPROVED
-            ).exists()
-        )
-        if already:
-            continue
-        sent += send_push_to_user(
-            task.child,
-            "Не забудь про задание",
-            f"«{task.title}» ещё не отмечено сегодня.",
-            url="/child/tasks",
-        )
-    return sent
-
-
-def send_push_to_user(user, title, body, url="/") -> int:
-    sent = 0
-    for sub in PushSubscription.objects.filter(user=user):
-        payload = json.dumps({"title": title, "body": body, "url": url})
-        try:
-            webpush(
-                subscription_info={...},
-                data=payload,
-                vapid_private_key=settings.VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": settings.VAPID_ADMIN_EMAIL},
-            )
-            sent += 1
-        except WebPushException as e:
-            if e.response is not None and e.response.status_code == 410:
-                sub.delete()  # подписка истекла
-    return sent
-</file>
-
-<file path="backend/motivation/views/cron.py">
-from django.utils import timezone
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-import os
-
-from motivation.services.push import send_daily_task_reminders, send_weekly_report_reminders
-
-
-# views/cron.py
-class CronDispatchView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def _check_auth(self, request):
-        expected = os.environ.get("CRON_SECRET")
-        header = request.headers.get("Authorization", "")
-        if header.startswith("Bearer "):
-            header = header[len("Bearer "):]
-        else:
-            header = request.headers.get("X-Cron-Secret")
-        return bool(expected and header == expected)
-
-    def get(self, request, job):  # Vercel Cron
-        return self._dispatch(request, job)
-
-    def post(self, request, job):  # для ручного/внешнего вызова
-        return self._dispatch(request, job)
-
-    def _dispatch(self, request, job):
-        if not self._check_auth(request):
-            return Response({"detail": "forbidden"}, status=403)
-        if job == "weekly":
-            return Response({"job": job, "sent": send_weekly_report_reminders()})
-        if job == "daily":
-            return Response({"job": job, "sent": send_daily_task_reminders()})
-        return Response({"detail": "unknown job"}, status=404)
-</file>
-
-<file path="backend/motivation/views/push.py">
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-
-from backend.motivation.services.push import send_push_to_user
-from motivation.models import PushSubscription
-from .permissions import ServiceOrUserPermission, _is_authenticated
-
-
-class PushSubscribeView(APIView):
-    permission_classes = [ServiceOrUserPermission]
-
-    def post(self, request):
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется вход."}, status=401)
-
-        endpoint = request.data.get("endpoint")
-        p256dh = request.data.get("p256dh")
-        auth = request.data.get("auth")
-
-        if not endpoint or not p256dh or not auth:
-            return Response(
-                {"detail": "endpoint, p256dh и auth обязательны."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        sub, _ = PushSubscription.objects.update_or_create(
-            endpoint=endpoint,
-            defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
-        )
-        return Response({"id": sub.id}, status=status.HTTP_200_OK)
-
-
-class PushUnsubscribeView(APIView):
-    permission_classes = [ServiceOrUserPermission]
-
-    def post(self, request):
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется вход."}, status=401)
-
-        endpoint = request.data.get("endpoint")
-        if not endpoint:
-            return Response(
-                {"detail": "endpoint обязателен."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
-        return Response({"ok": True}, status=status.HTTP_200_OK)
-
-
-class PushTestView(APIView):
-    permission_classes = [ServiceOrUserPermission]
-
-    def post(self, request):
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется вход."}, status=401)
-
-        sent = send_push_to_user(
-            request.user,
-            "Проверка уведомлений",
-            "Push-уведомления работают 🎉",
-            url="/",
-        )
-        if sent == 0:
-            return Response(
-                {"detail": "Нет активных подписок. Включите уведомления."},
-                status=400,
-            )
-        return Response({"ok": True, "sent": sent})
-</file>
-
-<file path="frontend/public/sw.js">
-self.addEventListener("push", function (event) {
-  if (!event.data) return
-
-  const data = event.data.json()
-  const title = data.title || "Motivation"
-  const options = {
-    body: data.body || "",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
-    data: { url: data.url || "/" },
-  }
-
-  event.waitUntil(self.registration.showNotification(title, options))
-})
-
-self.addEventListener("notificationclick", function (event) {
-  event.notification.close()
-  const targetUrl = event.notification.data?.url || "/"
-
-  event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes(targetUrl) && "focus" in client) {
-          return client.focus()
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(targetUrl)
-      }
-    }),
-  )
-})
-</file>
-
-<file path="frontend/src/app/bff/push/subscribe/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const res = await serverApi.post("/api/v1/push/subscribe/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка подписки на push" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/bff/push/test/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const res = await serverApi.post(
-      "/api/v1/push/test/",
-      {},
-      {
-        headers: await buildDjangoHeaders(request),
-      },
-    )
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка отправки" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/app/bff/push/unsubscribe/route.ts">
-import { NextResponse } from "next/server"
-import { serverApi } from "@/lib/axios"
-import { buildDjangoHeaders } from "@/lib/bffAuth"
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json()
-    const res = await serverApi.post("/api/v1/push/unsubscribe/", body, {
-      headers: await buildDjangoHeaders(request),
-    })
-    return NextResponse.json(res.data)
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.response?.data?.detail || "Ошибка отписки от push" },
-      { status: error.response?.status || 500 },
-    )
-  }
-}
-</file>
-
-<file path="frontend/src/components/PushNotificationSettings.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { Switch } from "@/components/ui/switch"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Bell, Share, Send } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { api } from "@/lib/axios"
-
-const [sending, setSending] = useState(false)
-const [testMsg, setTestMsg] = useState<string | null>(null)
-
-const handleTest = async () => {
-  setSending(true)
-  setTestMsg(null)
-  try {
-    await api.post("/push/test")
-    setTestMsg("Уведомление отправлено")
-  } catch (e: any) {
-    setTestMsg(e.response?.data?.error || "Не удалось отправить")
-  } finally {
-    setSending(false)
-  }
-}
-
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
-  const rawData = window.atob(base64)
-  const outputArray = new Uint8Array(rawData.length)
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i)
-  }
-  return outputArray
-}
-
-export function PushNotificationSettings() {
-  const [status, setStatus] = useState<
-    "loading" | "unsupported" | "ios-browser" | "denied" | "ready"
-  >("loading")
-  const [isSubscribed, setIsSubscribed] = useState(false)
-  const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as any).standalone === true
-
-    if (isIos && !isStandalone) {
-      setStatus("ios-browser")
-      return
-    }
-
-    if (
-      !("serviceWorker" in navigator) ||
-      !("PushManager" in window) ||
-      !("Notification" in window)
-    ) {
-      setStatus("unsupported")
-      return
-    }
-
-    if (Notification.permission === "denied") {
-      setStatus("denied")
-      return
-    }
-
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((reg) => reg.pushManager.getSubscription())
-      .then((sub) => {
-        setIsSubscribed(!!sub)
-        setStatus("ready")
-      })
-      .catch(() => setStatus("unsupported"))
-  }, [])
-
-  const handleToggle = async (checked: boolean) => {
-    if (busy) return
-    setBusy(true)
-
-    try {
-      const reg = await navigator.serviceWorker.ready
-
-      if (checked) {
-        // Подписка
-        const permission = await Notification.requestPermission()
-        if (permission !== "granted") {
-          setStatus(permission === "denied" ? "denied" : "ready")
-          setIsSubscribed(false)
-          return
-        }
-
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidKey),
-        })
-
-        const json = sub.toJSON()
-        await api.post("/push/subscribe", {
-          endpoint: json.endpoint,
-          p256dh: json.keys?.p256dh,
-          auth: json.keys?.auth,
-        })
-
-        setIsSubscribed(true)
-      } else {
-        // Отписка
-        const sub = await reg.pushManager.getSubscription()
-        if (sub) {
-          await api.post("/push/unsubscribe", { endpoint: sub.endpoint })
-          await sub.unsubscribe()
-        }
-        setIsSubscribed(false)
-      }
-    } catch (e) {
-      console.error("Ошибка управления подпиской:", e)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (status === "loading" || status === "unsupported") return null
-
-  return (
-    <Card className="border-app-surface bg-app-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-          <Bell className="h-4 w-4 text-text-muted" />
-          Уведомления
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0">
-        {status === "ios-browser" && (
-          <div className="flex items-start gap-2 rounded-xl bg-app-surface p-3 text-xs text-text-muted">
-            <Share className="mt-0.5 h-4 w-4 shrink-0 text-text-main" />
-            <span>
-              Чтобы включить уведомления на iPhone, нажмите <strong>«Поделиться»</strong> внизу
-              экрана и выберите <strong>«На экран Домой»</strong>.
-            </span>
-          </div>
-        )}
-
-        {status === "denied" && (
-          <p className="text-xs text-finance-negative">
-            Уведомления заблокированы в настройках браузера или телефона. Разрешите их в настройках
-            устройства.
-          </p>
-        )}
-
-        {status === "ready" && (
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-text-main">Push-уведомления</span>
-              <span className="text-xs text-text-muted">
-                Напоминания о заданиях и итогах недели
-              </span>
-            </div>
-            <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 h-8 gap-1.5"
-              disabled={!isSubscribed || sending}
-              onClick={handleTest}
-            >
-              <Send className="h-3.5 w-3.5" />
-              {sending ? "Отправка…" : "Отправить тест"}
-            </Button>
-            {testMsg && <p className="mt-2 text-[11px] text-text-muted">{testMsg}</p>}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-</file>
-
 <file path="backend/config/__init__.py">
 
 </file>
@@ -828,31 +351,135 @@ class Command(BaseCommand):
 
 </file>
 
-<file path="backend/motivation/views/__init__.py">
-from .auth import OAuthLoginView, MeView, RegisterParentView, JoinByCodeView
-from .family import FamilyInviteCodeViewSet
-from .tasks import TaskViewSet
-from .users import UserViewSet
-from .task_logs import TaskLogViewSet
-from .reports import WeeklyReportViewSet
-from .permissions import ServiceOrUserPermission
-from .push import PushSubscribeView, PushUnsubscribeView, PushTestView
+<file path="backend/motivation/services/push.py">
+from datetime import date, timedelta
+import json
+from pywebpush import webpush, WebPushException
+from django.conf import settings
+from motivation.models import PushSubscription, User, Task, TaskLog, WeeklyReport
 
-__all__ = [
-    "OAuthLoginView",
-    "MeView",
-    "RegisterParentView",
-    "JoinByCodeView",
-    "FamilyInviteCodeViewSet",
-    "TaskViewSet",
-    "UserViewSet",
-    "TaskLogViewSet",
-    "WeeklyReportViewSet",
-    "ServiceOrUserPermission",
-    "PushSubscribeView",
-    "PushUnsubscribeView",
-    "PushTestView",
-]
+
+def send_weekly_report_reminders() -> int:
+    """Напоминание родителям закрыть неделю (по воскресеньям)."""
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    sent = 0
+    parents = User.objects.filter(role=User.Role.PARENT)
+    for parent in parents.iterator():
+        # есть ли у родителя хотя бы один ребёнок с незакрытой неделей
+        has_open = (
+            WeeklyReport.objects.filter(
+                child__family_memberships__family__family_memberships__user=parent,
+                start_date=week_start,
+            )
+            .exclude(status=WeeklyReport.Status.CLOSED)
+            .exists()
+        )
+        if not has_open:
+            continue
+        sent += send_push_to_user(
+            parent,
+            "Итоги недели",
+            "Пора проверить задания ребёнка и закрыть неделю.",
+            url="/parent/reports",
+        )
+    return sent
+
+
+def send_daily_task_reminders() -> int:
+    """Ежедневное напоминание ребёнку о незакрытых заданиях (вечер)."""
+    today = date.today()
+    weekday = today.isoweekday()  # 1..7
+    sent = 0
+    tasks = Task.objects.filter(is_active=True).select_related("child")
+    for task in tasks.iterator():
+        if task.schedule_type == Task.ScheduleType.WEEKLY_DAYS:
+            if weekday not in (task.target_days or []):
+                continue
+        already = (
+            TaskLog.objects.filter(
+                task=task, date=today, status=TaskLog.Status.DONE_BY_CHILD
+            ).exists()
+            or TaskLog.objects.filter(
+                task=task, date=today, status=TaskLog.Status.APPROVED
+            ).exists()
+        )
+        if already:
+            continue
+        sent += send_push_to_user(
+            task.child,
+            "Не забудь про задание",
+            f"«{task.title}» ещё не отмечено сегодня.",
+            url="/child/tasks",
+        )
+    return sent
+
+
+def send_push_to_user(user, title, body, url="/") -> int:
+    sent = 0
+    for sub in PushSubscription.objects.filter(user=user):
+        payload = json.dumps({"title": title, "body": body, "url": url})
+        subscription_info = {
+            "endpoint": sub.endpoint,
+            "keys": {
+                "p256dh": sub.p256dh,
+                "auth": sub.auth,
+            },
+        }
+        try:
+            webpush(
+                subscription_info=subscription_info,
+                data=payload,
+                vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                vapid_claims={
+                    "sub": getattr(settings, "VAPID_ADMIN_EMAIL", "admin@example.com")
+                },
+            )
+            sent += 1
+        except WebPushException as e:
+            if e.response is not None and e.response.status_code == 410:
+                sub.delete()
+    return sent
+</file>
+
+<file path="backend/motivation/views/cron.py">
+from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
+import os
+
+from motivation.services.push import send_daily_task_reminders, send_weekly_report_reminders
+
+
+# views/cron.py
+class CronDispatchView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def _check_auth(self, request):
+        expected = os.environ.get("CRON_SECRET")
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            header = header[len("Bearer "):]
+        else:
+            header = request.headers.get("X-Cron-Secret")
+        return bool(expected and header == expected)
+
+    def get(self, request, job):  # Vercel Cron
+        return self._dispatch(request, job)
+
+    def post(self, request, job):  # для ручного/внешнего вызова
+        return self._dispatch(request, job)
+
+    def _dispatch(self, request, job):
+        if not self._check_auth(request):
+            return Response({"detail": "forbidden"}, status=403)
+        if job == "weekly":
+            return Response({"job": job, "sent": send_weekly_report_reminders()})
+        if job == "daily":
+            return Response({"job": job, "sent": send_daily_task_reminders()})
+        return Response({"detail": "unknown job"}, status=404)
 </file>
 
 <file path="backend/motivation/views/family.py">
@@ -973,6 +600,79 @@ def _is_bff(request) -> bool:
 def _is_authenticated(request) -> bool:
     user = getattr(request, "user", None)
     return bool(user and getattr(user, "is_authenticated", False))
+</file>
+
+<file path="backend/motivation/views/push.py">
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from backend.motivation.services.push import send_push_to_user
+from motivation.models import PushSubscription
+from .permissions import ServiceOrUserPermission, _is_authenticated
+
+
+class PushSubscribeView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        endpoint = request.data.get("endpoint")
+        p256dh = request.data.get("p256dh")
+        auth = request.data.get("auth")
+
+        if not endpoint or not p256dh or not auth:
+            return Response(
+                {"detail": "endpoint, p256dh и auth обязательны."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sub, _ = PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
+        )
+        return Response({"id": sub.id}, status=status.HTTP_200_OK)
+
+
+class PushUnsubscribeView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        endpoint = request.data.get("endpoint")
+        if not endpoint:
+            return Response(
+                {"detail": "endpoint обязателен."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class PushTestView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        sent = send_push_to_user(
+            request.user,
+            "Проверка уведомлений",
+            "Push-уведомления работают 🎉",
+            url="/",
+        )
+        if sent == 0:
+            return Response(
+                {"detail": "Нет активных подписок. Включите уведомления."},
+                status=400,
+            )
+        return Response({"ok": True, "sent": sent})
 </file>
 
 <file path="backend/motivation/views/reports.py">
@@ -1367,6 +1067,41 @@ export default config;
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
+</file>
+
+<file path="frontend/public/sw.js">
+self.addEventListener("push", function (event) {
+  if (!event.data) return
+
+  const data = event.data.json()
+  const title = data.title || "Motivation"
+  const options = {
+    body: data.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: { url: data.url || "/" },
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close()
+  const targetUrl = event.notification.data?.url || "/"
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(targetUrl) && "focus" in client) {
+          return client.focus()
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl)
+      }
+    }),
+  )
+})
 </file>
 
 <file path="frontend/README.md">
@@ -2003,6 +1738,72 @@ export async function POST(request: Request) {
 }
 </file>
 
+<file path="frontend/src/app/bff/push/subscribe/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/push/subscribe/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка подписки на push" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/push/test/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const res = await serverApi.post(
+      "/api/v1/push/test/",
+      {},
+      {
+        headers: await buildDjangoHeaders(request),
+      },
+    )
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка отправки" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
+<file path="frontend/src/app/bff/push/unsubscribe/route.ts">
+import { NextResponse } from "next/server"
+import { serverApi } from "@/lib/axios"
+import { buildDjangoHeaders } from "@/lib/bffAuth"
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const res = await serverApi.post("/api/v1/push/unsubscribe/", body, {
+      headers: await buildDjangoHeaders(request),
+    })
+    return NextResponse.json(res.data)
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.response?.data?.detail || "Ошибка отписки от push" },
+      { status: error.response?.status || 500 },
+    )
+  }
+}
+</file>
+
 <file path="frontend/src/app/bff/task-logs/[id]/history/route.ts">
 import { NextResponse } from "next/server"
 import { serverApi } from "@/lib/axios"
@@ -2254,371 +2055,6 @@ export async function GET(request: Request) {
 }
 </file>
 
-<file path="frontend/src/app/child/profile/ProfileClient.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { format } from "date-fns"
-import {
-  Calendar as CalendarIcon,
-  LogOut,
-  Trophy,
-  CalendarDays,
-  Pencil,
-  Check,
-  X,
-  AlertTriangle,
-} from "lucide-react"
-
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useMe } from "@/hooks/useMe"
-import { childApi } from "@/services/childApi"
-import { authApi } from "@/services/authApi"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
-import { parentApi } from "@/services/parentApi"
-import { PushNotificationSettings } from "@/components/PushNotificationSettings"
-
-function calcAge(birthDate?: string | null): number | null {
-  if (!birthDate) return null
-  const b = new Date(birthDate)
-  if (isNaN(b.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - b.getFullYear()
-  const m = now.getMonth() - b.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
-  return age
-}
-
-export function ProfileClient() {
-  const { me, ready } = useMe()
-  const queryClient = useQueryClient()
-  const searchParams = useSearchParams()
-  const router = useRouter()
-
-  const requireProfile = searchParams.get("require") === "1"
-
-  const [isEditing, setIsEditing] = useState(false)
-  const [editForm, setEditForm] = useState({
-    first_name: "",
-    last_name: "",
-    birth_date: undefined as Date | undefined,
-    gender: "" as "MALE" | "FEMALE" | "",
-  })
-
-  const { data: reports = [] } = useQuery<any[]>({
-    queryKey: ["child-payouts"],
-    queryFn: () => childApi.getMyReports(),
-  })
-
-  const { data: familyMembers = [] } = useQuery<any[]>({
-    queryKey: ["family-members"],
-    queryFn: () => parentApi.getFamilyMembers(),
-    enabled: !!me?.family_id,
-  })
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (data: any) => authApi.updateMe(data),
-    onSuccess: (updatedData) => {
-      queryClient.setQueryData(["me"], updatedData)
-      queryClient.invalidateQueries({ queryKey: ["me"] })
-      setIsEditing(false)
-
-      // Если пришли по требованию — убираем флаг, чтобы баннер исчез.
-      if (requireProfile) {
-        router.replace("/child/profile")
-      }
-    },
-  })
-
-  // Авто-открытие редактора, если пришли по требованию и поля не заполнены.
-  useEffect(() => {
-    if (!ready || !me) return
-    if (requireProfile && (!me.birth_date || !me.gender)) {
-      setEditForm({
-        first_name: me.first_name || "",
-        last_name: me.last_name || "",
-        birth_date: me.birth_date ? new Date(me.birth_date) : undefined,
-        gender: (me.gender as "MALE" | "FEMALE") || "",
-      })
-      setIsEditing(true)
-    }
-  }, [ready, me, requireProfile])
-
-  const handleLogout = async () => {
-    await fetch("/bff/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  const startEditing = () => {
-    setEditForm({
-      first_name: me?.first_name || "",
-      last_name: me?.last_name || "",
-      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
-      gender: (me?.gender as "MALE" | "FEMALE") || "",
-    })
-    setIsEditing(true)
-  }
-
-  const saveProfile = () => {
-    updateProfileMutation.mutate({
-      first_name: editForm.first_name,
-      last_name: editForm.last_name,
-      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
-      gender: editForm.gender || null,
-    })
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
-  const age = calcAge(me?.birth_date)
-  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
-
-  const closedReports = (reports as any[]).filter(
-    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
-  )
-  const totalWeeks = closedReports.length
-  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
-
-  const profileIncomplete = !me?.birth_date || !me?.gender
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-        {!isEditing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={startEditing}
-            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Изменить
-          </Button>
-        )}
-      </div>
-
-      {requireProfile && profileIncomplete && (
-        <div className="flex items-start gap-2 rounded-xl border border-finance-pending/40 bg-finance-pending/10 p-3 text-[12px] text-finance-pending">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="flex flex-col gap-0.5">
-            <span className="font-semibold">Заполните профиль</span>
-            <span>Нужны дата рождения и пол — без них задания недоступны.</span>
-          </div>
-        </div>
-      )}
-
-      {/* Карточка с основной информацией */}
-      <Card className="border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-start gap-4 p-5">
-          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
-            <AvatarImage src={me?.avatar_url ?? undefined} />
-            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
-              {(fullName || "?").slice(0, 1)}
-            </AvatarFallback>
-          </Avatar>
-
-          {isEditing ? (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Имя"
-                  value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-                <Input
-                  placeholder="Фамилия"
-                  value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                  className="h-9 bg-app-surface"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
-                          !editForm.birth_date && "text-muted-foreground",
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {editForm.birth_date
-                          ? format(editForm.birth_date, "dd.MM.yyyy")
-                          : "Дата рождения"}
-                      </Button>
-                    }
-                  />
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={editForm.birth_date}
-                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
-                      autoFocus
-                      captionLayout="dropdown"
-                      startMonth={new Date(2000, 0)}
-                      endMonth={new Date(new Date().getFullYear(), 11)}
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <Select
-                  value={editForm.gender}
-                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
-                >
-                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
-                    <SelectValue placeholder="Пол" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MALE">Мужской</SelectItem>
-                    <SelectItem value="FEMALE">Женский</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {requireProfile && profileIncomplete && (
-                <p className="text-[11px] text-finance-pending">
-                  Дата рождения и пол обязательны для сохранения.
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 mt-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsEditing(false)}
-                  className="h-8 text-text-muted"
-                >
-                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={saveProfile}
-                  disabled={
-                    updateProfileMutation.isPending ||
-                    (requireProfile && profileIncomplete && !editForm.birth_date) ||
-                    (requireProfile && profileIncomplete && !editForm.gender)
-                  }
-                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
-                >
-                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
-                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1 pt-1">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-text-main">{fullName}</span>
-                <Badge
-                  variant="secondary"
-                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
-                >
-                  Ребёнок
-                </Badge>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-text-muted">
-                {age !== null && <span>{age} лет</span>}
-                {age !== null && genderLabel && <span>•</span>}
-                {genderLabel && <span>{genderLabel}</span>}
-                {!age && !genderLabel && <span>Данные не заполнены</span>}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Успехи */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <Trophy className="h-4 w-4 text-finance-pending" />
-            Мои успехи
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 pt-0">
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Закрытых недель</span>
-            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
-          </div>
-          <div className="flex flex-col rounded-xl bg-app-surface p-3">
-            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
-            <span className="text-lg font-bold text-text-main">
-              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Семья */}
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-            <CalendarDays className="h-4 w-4 text-text-muted" />
-            Моя семья
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {me?.family_id ? (
-            <div className="flex flex-col gap-3 mt-1">
-              {familyMembers.map((member) => (
-                <div key={member.id} className="flex items-center gap-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={member.avatar_url} />
-                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
-                      {member.first_name?.[0] || "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-text-main">
-                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
-                        "Без имени"}
-                    </span>
-                    <span className="text-[11px] text-text-muted">
-                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-text-muted">Семья не привязана</p>
-          )}
-        </CardContent>
-      </Card>
-      <PushNotificationSettings />
-
-      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
-        <LogOut className="mr-1.5 h-3.5 w-3.5" />
-        Выйти
-      </Button>
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/components/AppShell.tsx">
 // components/AppShell.tsx
 "use client"
@@ -2745,6 +2181,187 @@ export function OnboardingSlides({ onDone }: OnboardingSlidesProps) {
         </Button>
       </div>
     </div>
+  )
+}
+</file>
+
+<file path="frontend/src/components/PushNotificationSettings.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Bell, Share, Send } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { api } from "@/lib/axios"
+
+const [sending, setSending] = useState(false)
+const [testMsg, setTestMsg] = useState<string | null>(null)
+
+const handleTest = async () => {
+  setSending(true)
+  setTestMsg(null)
+  try {
+    await api.post("/push/test")
+    setTestMsg("Уведомление отправлено")
+  } catch (e: any) {
+    setTestMsg(e.response?.data?.error || "Не удалось отправить")
+  } finally {
+    setSending(false)
+  }
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
+export function PushNotificationSettings() {
+  const [status, setStatus] = useState<
+    "loading" | "unsupported" | "ios-browser" | "denied" | "ready"
+  >("loading")
+  const [isSubscribed, setIsSubscribed] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as any).standalone === true
+
+    if (isIos && !isStandalone) {
+      setStatus("ios-browser")
+      return
+    }
+
+    if (
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window) ||
+      !("Notification" in window)
+    ) {
+      setStatus("unsupported")
+      return
+    }
+
+    if (Notification.permission === "denied") {
+      setStatus("denied")
+      return
+    }
+
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        setIsSubscribed(!!sub)
+        setStatus("ready")
+      })
+      .catch(() => setStatus("unsupported"))
+  }, [])
+
+  const handleToggle = async (checked: boolean) => {
+    if (busy) return
+    setBusy(true)
+
+    try {
+      const reg = await navigator.serviceWorker.ready
+
+      if (checked) {
+        // Подписка
+        const permission = await Notification.requestPermission()
+        if (permission !== "granted") {
+          setStatus(permission === "denied" ? "denied" : "ready")
+          setIsSubscribed(false)
+          return
+        }
+
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        })
+
+        const json = sub.toJSON()
+        await api.post("/push/subscribe", {
+          endpoint: json.endpoint,
+          p256dh: json.keys?.p256dh,
+          auth: json.keys?.auth,
+        })
+
+        setIsSubscribed(true)
+      } else {
+        // Отписка
+        const sub = await reg.pushManager.getSubscription()
+        if (sub) {
+          await api.post("/push/unsubscribe", { endpoint: sub.endpoint })
+          await sub.unsubscribe()
+        }
+        setIsSubscribed(false)
+      }
+    } catch (e) {
+      console.error("Ошибка управления подпиской:", e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (status === "loading" || status === "unsupported") return null
+
+  return (
+    <Card className="border-app-surface bg-app-card">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+          <Bell className="h-4 w-4 text-text-muted" />
+          Уведомления
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {status === "ios-browser" && (
+          <div className="flex items-start gap-2 rounded-xl bg-app-surface p-3 text-xs text-text-muted">
+            <Share className="mt-0.5 h-4 w-4 shrink-0 text-text-main" />
+            <span>
+              Чтобы включить уведомления на iPhone, нажмите <strong>«Поделиться»</strong> внизу
+              экрана и выберите <strong>«На экран Домой»</strong>.
+            </span>
+          </div>
+        )}
+
+        {status === "denied" && (
+          <p className="text-xs text-finance-negative">
+            Уведомления заблокированы в настройках браузера или телефона. Разрешите их в настройках
+            устройства.
+          </p>
+        )}
+
+        {status === "ready" && (
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-text-main">Push-уведомления</span>
+              <span className="text-xs text-text-muted">
+                Напоминания о заданиях и итогах недели
+              </span>
+            </div>
+            <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 h-8 gap-1.5"
+              disabled={!isSubscribed || sending}
+              onClick={handleTest}
+            >
+              <Send className="h-3.5 w-3.5" />
+              {sending ? "Отправка…" : "Отправить тест"}
+            </Button>
+            {testMsg && <p className="mt-2 text-[11px] text-text-muted">{testMsg}</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 </file>
@@ -3724,37 +3341,30 @@ def close_week(
     return report
 </file>
 
-<file path="backend/motivation/urls.py">
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+<file path="backend/motivation/views/__init__.py">
+from .auth import OAuthLoginView, MeView, RegisterParentView, JoinByCodeView
+from .family import FamilyInviteCodeViewSet
+from .tasks import TaskViewSet
+from .users import UserViewSet
+from .task_logs import TaskLogViewSet
+from .reports import WeeklyReportViewSet
+from .permissions import ServiceOrUserPermission
+from .push import PushSubscribeView, PushUnsubscribeView, PushTestView
 
-from backend.motivation.views.push import PushTestView
-from motivation.views.cron import CronDispatchView
-from .views import (
-    UserViewSet,
-    FamilyInviteCodeViewSet,
-    TaskViewSet,
-    TaskLogViewSet,
-    WeeklyReportViewSet,
-    PushSubscribeView,
-    PushUnsubscribeView,
-)
-
-
-router = DefaultRouter()
-router.register(r"users", UserViewSet, basename="user")
-router.register(r"invites", FamilyInviteCodeViewSet, basename="invite")
-router.register(r"tasks", TaskViewSet, basename="task")
-router.register(r"task-logs", TaskLogViewSet, basename="task-log")
-router.register(r"weekly-reports", WeeklyReportViewSet, basename="weekly-report")
-
-
-urlpatterns = [
-    path("", include(router.urls)),
-    path("cron/<str:job>/", CronDispatchView.as_view()),
-    path("push/subscribe/", PushSubscribeView.as_view(), name="push-subscribe"),
-    path("push/unsubscribe/", PushUnsubscribeView.as_view(), name="push-unsubscribe"),
-    path("push/test/", PushTestView.as_view(), name="push-test"),
+__all__ = [
+    "OAuthLoginView",
+    "MeView",
+    "RegisterParentView",
+    "JoinByCodeView",
+    "FamilyInviteCodeViewSet",
+    "TaskViewSet",
+    "UserViewSet",
+    "TaskLogViewSet",
+    "WeeklyReportViewSet",
+    "ServiceOrUserPermission",
+    "PushSubscribeView",
+    "PushUnsubscribeView",
+    "PushTestView",
 ]
 </file>
 
@@ -3937,6 +3547,371 @@ export default function ChildIndexPage() {
     router.replace("/child/tasks")
   }, [router])
   return null
+}
+</file>
+
+<file path="frontend/src/app/child/profile/ProfileClient.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { format } from "date-fns"
+import {
+  Calendar as CalendarIcon,
+  LogOut,
+  Trophy,
+  CalendarDays,
+  Pencil,
+  Check,
+  X,
+  AlertTriangle,
+} from "lucide-react"
+
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useMe } from "@/hooks/useMe"
+import { childApi } from "@/services/childApi"
+import { authApi } from "@/services/authApi"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { parentApi } from "@/services/parentApi"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
+
+function calcAge(birthDate?: string | null): number | null {
+  if (!birthDate) return null
+  const b = new Date(birthDate)
+  if (isNaN(b.getTime())) return null
+  const now = new Date()
+  let age = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
+  return age
+}
+
+export function ProfileClient() {
+  const { me, ready } = useMe()
+  const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  const requireProfile = searchParams.get("require") === "1"
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    birth_date: undefined as Date | undefined,
+    gender: "" as "MALE" | "FEMALE" | "",
+  })
+
+  const { data: reports = [] } = useQuery<any[]>({
+    queryKey: ["child-payouts"],
+    queryFn: () => childApi.getMyReports(),
+  })
+
+  const { data: familyMembers = [] } = useQuery<any[]>({
+    queryKey: ["family-members"],
+    queryFn: () => parentApi.getFamilyMembers(),
+    enabled: !!me?.family_id,
+  })
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: any) => authApi.updateMe(data),
+    onSuccess: (updatedData) => {
+      queryClient.setQueryData(["me"], updatedData)
+      queryClient.invalidateQueries({ queryKey: ["me"] })
+      setIsEditing(false)
+
+      // Если пришли по требованию — убираем флаг, чтобы баннер исчез.
+      if (requireProfile) {
+        router.replace("/child/profile")
+      }
+    },
+  })
+
+  // Авто-открытие редактора, если пришли по требованию и поля не заполнены.
+  useEffect(() => {
+    if (!ready || !me) return
+    if (requireProfile && (!me.birth_date || !me.gender)) {
+      setEditForm({
+        first_name: me.first_name || "",
+        last_name: me.last_name || "",
+        birth_date: me.birth_date ? new Date(me.birth_date) : undefined,
+        gender: (me.gender as "MALE" | "FEMALE") || "",
+      })
+      setIsEditing(true)
+    }
+  }, [ready, me, requireProfile])
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  const startEditing = () => {
+    setEditForm({
+      first_name: me?.first_name || "",
+      last_name: me?.last_name || "",
+      birth_date: me?.birth_date ? new Date(me.birth_date) : undefined,
+      gender: (me?.gender as "MALE" | "FEMALE") || "",
+    })
+    setIsEditing(true)
+  }
+
+  const saveProfile = () => {
+    updateProfileMutation.mutate({
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      birth_date: editForm.birth_date ? format(editForm.birth_date, "yyyy-MM-dd") : null,
+      gender: editForm.gender || null,
+    })
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Ребёнок"
+  const age = calcAge(me?.birth_date)
+  const genderLabel = me?.gender === "MALE" ? "Сын" : me?.gender === "FEMALE" ? "Дочь" : null
+
+  const closedReports = (reports as any[]).filter(
+    (r) => r.status === "CLOSED" || r.is_payout_confirmed,
+  )
+  const totalWeeks = closedReports.length
+  const bestWeek = closedReports.reduce((max, r) => Math.max(max, Number(r.total_paid || 0)), 0)
+
+  const profileIncomplete = !me?.birth_date || !me?.gender
+
+  return (
+    <div className="flex flex-col gap-6 pb-20">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startEditing}
+            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Изменить
+          </Button>
+        )}
+      </div>
+
+      {requireProfile && profileIncomplete && (
+        <div className="flex items-start gap-2 rounded-xl border border-finance-pending/40 bg-finance-pending/10 p-3 text-[12px] text-finance-pending">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-semibold">Заполните профиль</span>
+            <span>Нужны дата рождения и пол — без них задания недоступны.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Карточка с основной информацией */}
+      <Card className="border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-start gap-4 p-5">
+          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
+            <AvatarImage src={me?.avatar_url ?? undefined} />
+            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-brand-warning-strong text-lg">
+              {(fullName || "?").slice(0, 1)}
+            </AvatarFallback>
+          </Avatar>
+
+          {isEditing ? (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Имя"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+                <Input
+                  placeholder="Фамилия"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  className="h-9 bg-app-surface"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "h-9 flex-1 justify-start bg-app-surface text-left font-normal",
+                          !editForm.birth_date && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {editForm.birth_date
+                          ? format(editForm.birth_date, "dd.MM.yyyy")
+                          : "Дата рождения"}
+                      </Button>
+                    }
+                  />
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={editForm.birth_date}
+                      onSelect={(date) => setEditForm({ ...editForm, birth_date: date })}
+                      autoFocus
+                      captionLayout="dropdown"
+                      startMonth={new Date(2000, 0)}
+                      endMonth={new Date(new Date().getFullYear(), 11)}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Select
+                  value={editForm.gender}
+                  onValueChange={(val) => setEditForm({ ...editForm, gender: val as any })}
+                >
+                  <SelectTrigger className="h-9 flex-1 bg-app-surface">
+                    <SelectValue placeholder="Пол" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MALE">Мужской</SelectItem>
+                    <SelectItem value="FEMALE">Женский</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {requireProfile && profileIncomplete && (
+                <p className="text-[11px] text-finance-pending">
+                  Дата рождения и пол обязательны для сохранения.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 mt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  className="h-8 text-text-muted"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" /> Отмена
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveProfile}
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    (requireProfile && profileIncomplete && !editForm.birth_date) ||
+                    (requireProfile && profileIncomplete && !editForm.gender)
+                  }
+                  className="h-8 bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
+                >
+                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
+                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1 pt-1">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-text-main">{fullName}</span>
+                <Badge
+                  variant="secondary"
+                  className="bg-brand-primary-soft text-brand-warning-strong text-[10px]"
+                >
+                  Ребёнок
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                {age !== null && <span>{age} лет</span>}
+                {age !== null && genderLabel && <span>•</span>}
+                {genderLabel && <span>{genderLabel}</span>}
+                {!age && !genderLabel && <span>Данные не заполнены</span>}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Успехи */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <Trophy className="h-4 w-4 text-finance-pending" />
+            Мои успехи
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 pt-0">
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Закрытых недель</span>
+            <span className="text-lg font-bold text-text-main">{totalWeeks}</span>
+          </div>
+          <div className="flex flex-col rounded-xl bg-app-surface p-3">
+            <span className="text-[11px] text-text-muted">Лучшая неделя</span>
+            <span className="text-lg font-bold text-text-main">
+              {bestWeek > 0 ? `${bestWeek} ₽` : "—"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Семья */}
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <CalendarDays className="h-4 w-4 text-text-muted" />
+            Моя семья
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {me?.family_id ? (
+            <div className="flex flex-col gap-3 mt-1">
+              {familyMembers.map((member) => (
+                <div key={member.id} className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={member.avatar_url} />
+                    <AvatarFallback className="bg-app-surface text-text-main text-xs">
+                      {member.first_name?.[0] || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-text-main">
+                      {[member.first_name, member.last_name].filter(Boolean).join(" ") ||
+                        "Без имени"}
+                    </span>
+                    <span className="text-[11px] text-text-muted">
+                      {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">Семья не привязана</p>
+          )}
+        </CardContent>
+      </Card>
+      <PushNotificationSettings />
+
+      <Button variant="destructive" size="sm" className="h-9 w-full mt-2" onClick={handleLogout}>
+        <LogOut className="mr-1.5 h-3.5 w-3.5" />
+        Выйти
+      </Button>
+    </div>
+  )
 }
 </file>
 
@@ -5771,126 +5746,6 @@ urlpatterns = [
 ]
 </file>
 
-<file path="backend/motivation/admin.py">
-from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
-from .models import (
-    PushSubscription,
-    User,
-    FamilyGroup,
-    FamilyMembership,
-    FamilyInviteCode,
-    Task,
-    TaskLog,
-    WeeklyReport,
-)
-
-assert UserAdmin.fieldsets is not None
-assert UserAdmin.add_fieldsets is not None
-
-
-@admin.register(User)
-class CustomUserAdmin(UserAdmin):
-    """Настройка отображения пользователей в админке с учетом кастомных полей."""
-
-    fieldsets = list(UserAdmin.fieldsets) + [
-        (
-            "Дополнительно",
-            {
-                "fields": (
-                    "role",
-                    "telegram_id",
-                    "google_id",
-                    "apple_id",
-                    "avatar_url",
-                    "birth_date",
-                    "gender",
-                )
-            },
-        ),
-    ]
-    add_fieldsets = list(UserAdmin.add_fieldsets) + [
-        ("Дополнительно", {"fields": ("role", "telegram_id", "birth_date", "gender")}),
-    ]
-    list_display = (
-        "username",
-        "email",
-        "first_name",
-        "last_name",
-        "role",
-        "is_staff",
-        "birth_date",
-        "gender",
-    )
-    list_filter = ("role", "is_staff", "is_active", "gender")
-
-
-class FamilyMembershipInline(admin.TabularInline):
-    model = FamilyMembership
-    extra = 1
-
-
-@admin.register(FamilyGroup)
-class FamilyGroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "created_at")
-    inlines = [FamilyMembershipInline]
-
-
-@admin.register(FamilyMembership)
-class FamilyMembershipAdmin(admin.ModelAdmin):
-    list_display = ("user", "family", "is_owner", "joined_at")
-    list_filter = ("is_owner",)
-
-
-@admin.register(FamilyInviteCode)
-class FamilyInviteCodeAdmin(admin.ModelAdmin):
-    list_display = ("code", "family", "created_by", "expires_at", "is_used")
-    list_filter = ("is_used",)
-
-
-@admin.register(Task)
-class TaskAdmin(admin.ModelAdmin):
-    list_display = (
-        "title",
-        "child",
-        "created_by",
-        "weekly_price",
-        "schedule_type",
-        "is_active",
-        "price_per_run",
-    )
-    list_filter = ("schedule_type", "is_active")
-    search_fields = ("title", "description")
-
-
-@admin.register(TaskLog)
-class TaskLogAdmin(admin.ModelAdmin):
-    list_display = ("task", "date", "status", "earned_amount", "updated_by_parent")
-    list_filter = ("status", "updated_by_parent")
-
-
-@admin.register(WeeklyReport)
-class WeeklyReportAdmin(admin.ModelAdmin):
-    list_display = (
-        "child",
-        "start_date",
-        "end_date",
-        "status",
-        "calculated_amount",
-        "manual_adjustment",
-        "final_sum",
-        "total_paid",
-        "is_payout_confirmed",
-    )
-    list_filter = ("status", "is_payout_confirmed")
-
-
-@admin.register(PushSubscription)
-class PushSubscriptionAdmin(admin.ModelAdmin):
-    list_display = ("user", "endpoint", "created_at")
-    search_fields = ("user__username", "user__email", "endpoint")
-</file>
-
 <file path="backend/motivation/migrations/0001_initial.py">
 # Generated by Django 5.2.18 on 2026-11-14 00:35
 
@@ -6082,160 +5937,38 @@ class Migration(migrations.Migration):
     ]
 </file>
 
-<file path="backend/motivation/tests.py">
-from datetime import date
-from decimal import Decimal
-from rest_framework import status
-from rest_framework.test import APITestCase
-from django.urls import reverse
+<file path="backend/motivation/urls.py">
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 
-from motivation.models import User, Task, TaskLog, WeeklyReport
-
-
-class WeeklyReportBusinessLogicTests(APITestCase):
-    def setUp(self):
-        self.parent = User.objects.create_user(
-            username="parent_user",
-            password="password123",
-            role=User.Role.PARENT,
-            first_name="Ольга",
-        )
-        self.child = User.objects.create_user(
-            username="child_user",
-            password="password123",
-            role=User.Role.CHILD,
-            first_name="Тимур",
-        )
-
-        self.task = Task.objects.create(
-            child=self.child,
-            created_by=self.parent,
-            title="Уборка комнаты",
-            weekly_price=Decimal("350.00"),
-            schedule_type=Task.ScheduleType.FLEXIBLE,
-            target_count=5,
-            is_active=True,
-        )
-
-        self.report_url = reverse("weekly-report-list")
-
-    def test_weekly_report_calculation_and_final_sum(self):
-        start = date(2026, 10, 12)
-        end = date(2026, 10, 18)
-
-        report = WeeklyReport.objects.create(
-            child=self.child,
-            start_date=start,
-            end_date=end,
-            status=WeeklyReport.Status.REVIEW,
-            calculated_amount=Decimal("280.00"),
-            manual_adjustment=Decimal("50.00"),
-            comment="Отличная неделя",
-        )
-
-        self.assertEqual(report.final_sum, Decimal("330.00"))
-
-    def test_child_can_view_only_own_reports(self):
-        other_child = User.objects.create_user(
-            username="other_child", password="password123", role=User.Role.CHILD
-        )
-
-        WeeklyReport.objects.create(
-            child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
-        )
-        WeeklyReport.objects.create(
-            child=other_child,
-            start_date=date(2026, 10, 12),
-            end_date=date(2026, 10, 18),
-        )
-
-        self.client.force_authenticate(user=self.child)
-        response = self.client.get(self.report_url)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["child"], self.child.pk)
-
-    def test_parent_can_view_all_reports(self):
-        WeeklyReport.objects.create(
-            child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
-        )
-
-        self.client.force_authenticate(user=self.parent)
-        response = self.client.get(self.report_url)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
+from backend.motivation.views.push import PushTestView
+from motivation.views.cron import CronDispatchView
+from .views import (
+    UserViewSet,
+    FamilyInviteCodeViewSet,
+    TaskViewSet,
+    TaskLogViewSet,
+    WeeklyReportViewSet,
+    PushSubscribeView,
+    PushUnsubscribeView,
+)
 
 
-class WeeklyReviewViewTests(APITestCase):
-    def setUp(self):
-        self.parent = User.objects.create_user(
-            username="parent_test", password="password123", role=User.Role.PARENT
-        )
-        self.child = User.objects.create_user(
-            username="child_test",
-            password="password123",
-            role=User.Role.CHILD,
-            first_name="Али",
-        )
-        self.task = Task.objects.create(
-            child=self.child,
-            created_by=self.parent,
-            title="Уборка комнаты",
-            weekly_price=Decimal("900.00"),
-            schedule_type=Task.ScheduleType.FLEXIBLE,
-            target_count=3,
-            is_active=True,
-        )
-        self.url = reverse("task-weekly-review")
+router = DefaultRouter()
+router.register(r"users", UserViewSet, basename="user")
+router.register(r"invites", FamilyInviteCodeViewSet, basename="invite")
+router.register(r"tasks", TaskViewSet, basename="task")
+router.register(r"task-logs", TaskLogViewSet, basename="task-log")
+router.register(r"weekly-reports", WeeklyReportViewSet, basename="weekly-report")
 
-    def test_weekly_review_success(self):
-        self.client.force_authenticate(user=self.parent)
-        log_date = date(2025, 10, 20)
-        TaskLog.objects.create(
-            task=self.task,
-            date=log_date,
-            status=TaskLog.Status.APPROVED,
-            earned_amount=Decimal("300.00"),
-        )
 
-        response = self.client.get(
-            self.url, {"child_id": self.child.pk, "week_start": "2025-10-20"}
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["taskId"], self.task.pk)
-        self.assertEqual(data[0]["summary"]["approvedCount"], 1)
-        self.assertEqual(len(data[0]["logs"]), 1)
-
-    def test_weekly_review_missing_child_id(self):
-        self.client.force_authenticate(user=self.parent)
-        response = self.client.get(self.url)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("child_id", response.json()["detail"])
-
-    def test_weekly_review_invalid_date_format(self):
-        self.client.force_authenticate(user=self.parent)
-        response = self.client.get(
-            self.url, {"child_id": self.child.pk, "week_start": "invalid-date"}
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("week_start", response.json()["detail"])
-
-    def test_weekly_review_empty_result(self):
-        self.client.force_authenticate(user=self.parent)
-        other_child = User.objects.create_user(
-            username="empty_child", role=User.Role.CHILD
-        )
-        response = self.client.get(self.url, {"child_id": other_child.pk})
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.json(), [])
+urlpatterns = [
+    path("", include(router.urls)),
+    path("cron/<str:job>/", CronDispatchView.as_view()),
+    path("push/subscribe/", PushSubscribeView.as_view(), name="push-subscribe"),
+    path("push/unsubscribe/", PushUnsubscribeView.as_view(), name="push-unsubscribe"),
+    path("push/test/", PushTestView.as_view(), name="push-test"),
+]
 </file>
 
 <file path="backend/motivation/views/auth.py">
@@ -7638,6 +7371,282 @@ export function useFamilyMembers() {
 }
 </file>
 
+<file path="backend/motivation/admin.py">
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from .models import (
+    PushSubscription,
+    User,
+    FamilyGroup,
+    FamilyMembership,
+    FamilyInviteCode,
+    Task,
+    TaskLog,
+    WeeklyReport,
+)
+
+assert UserAdmin.fieldsets is not None
+assert UserAdmin.add_fieldsets is not None
+
+
+@admin.register(User)
+class CustomUserAdmin(UserAdmin):
+    """Настройка отображения пользователей в админке с учетом кастомных полей."""
+
+    fieldsets = list(UserAdmin.fieldsets) + [
+        (
+            "Дополнительно",
+            {
+                "fields": (
+                    "role",
+                    "telegram_id",
+                    "google_id",
+                    "apple_id",
+                    "avatar_url",
+                    "birth_date",
+                    "gender",
+                )
+            },
+        ),
+    ]
+    add_fieldsets = list(UserAdmin.add_fieldsets) + [
+        ("Дополнительно", {"fields": ("role", "telegram_id", "birth_date", "gender")}),
+    ]
+    list_display = (
+        "username",
+        "email",
+        "first_name",
+        "last_name",
+        "role",
+        "is_staff",
+        "birth_date",
+        "gender",
+    )
+    list_filter = ("role", "is_staff", "is_active", "gender")
+
+
+class FamilyMembershipInline(admin.TabularInline):
+    model = FamilyMembership
+    extra = 1
+
+
+@admin.register(FamilyGroup)
+class FamilyGroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "created_at")
+    inlines = [FamilyMembershipInline]
+
+
+@admin.register(FamilyMembership)
+class FamilyMembershipAdmin(admin.ModelAdmin):
+    list_display = ("user", "family", "is_owner", "joined_at")
+    list_filter = ("is_owner",)
+
+
+@admin.register(FamilyInviteCode)
+class FamilyInviteCodeAdmin(admin.ModelAdmin):
+    list_display = ("code", "family", "created_by", "expires_at", "is_used")
+    list_filter = ("is_used",)
+
+
+@admin.register(Task)
+class TaskAdmin(admin.ModelAdmin):
+    list_display = (
+        "title",
+        "child",
+        "created_by",
+        "weekly_price",
+        "schedule_type",
+        "is_active",
+        "price_per_run",
+    )
+    list_filter = ("schedule_type", "is_active")
+    search_fields = ("title", "description")
+
+
+@admin.register(TaskLog)
+class TaskLogAdmin(admin.ModelAdmin):
+    list_display = ("task", "date", "status", "earned_amount", "updated_by_parent")
+    list_filter = ("status", "updated_by_parent")
+
+
+@admin.register(WeeklyReport)
+class WeeklyReportAdmin(admin.ModelAdmin):
+    list_display = (
+        "child",
+        "start_date",
+        "end_date",
+        "status",
+        "calculated_amount",
+        "manual_adjustment",
+        "final_sum",
+        "total_paid",
+        "is_payout_confirmed",
+    )
+    list_filter = ("status", "is_payout_confirmed")
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "endpoint", "created_at")
+    search_fields = ("user__username", "user__email", "endpoint")
+</file>
+
+<file path="backend/motivation/tests.py">
+from datetime import date
+from decimal import Decimal
+from rest_framework import status
+from rest_framework.test import APITestCase
+from django.urls import reverse
+
+from motivation.models import User, Task, TaskLog, WeeklyReport
+
+
+class WeeklyReportBusinessLogicTests(APITestCase):
+    def setUp(self):
+        self.parent = User.objects.create_user(
+            username="parent_user",
+            password="password123",
+            role=User.Role.PARENT,
+            first_name="Ольга",
+        )
+        self.child = User.objects.create_user(
+            username="child_user",
+            password="password123",
+            role=User.Role.CHILD,
+            first_name="Тимур",
+        )
+
+        self.task = Task.objects.create(
+            child=self.child,
+            created_by=self.parent,
+            title="Уборка комнаты",
+            weekly_price=Decimal("350.00"),
+            schedule_type=Task.ScheduleType.FLEXIBLE,
+            target_count=5,
+            is_active=True,
+        )
+
+        self.report_url = reverse("weekly-report-list")
+
+    def test_weekly_report_calculation_and_final_sum(self):
+        start = date(2026, 10, 12)
+        end = date(2026, 10, 18)
+
+        report = WeeklyReport.objects.create(
+            child=self.child,
+            start_date=start,
+            end_date=end,
+            status=WeeklyReport.Status.REVIEW,
+            calculated_amount=Decimal("280.00"),
+            manual_adjustment=Decimal("50.00"),
+            comment="Отличная неделя",
+        )
+
+        self.assertEqual(report.final_sum, Decimal("330.00"))
+
+    def test_child_can_view_only_own_reports(self):
+        other_child = User.objects.create_user(
+            username="other_child", password="password123", role=User.Role.CHILD
+        )
+
+        WeeklyReport.objects.create(
+            child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
+        )
+        WeeklyReport.objects.create(
+            child=other_child,
+            start_date=date(2026, 10, 12),
+            end_date=date(2026, 10, 18),
+        )
+
+        self.client.force_authenticate(user=self.child)
+        response = self.client.get(self.report_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["child"], self.child.pk)
+
+    def test_parent_can_view_all_reports(self):
+        WeeklyReport.objects.create(
+            child=self.child, start_date=date(2026, 10, 12), end_date=date(2026, 10, 18)
+        )
+
+        self.client.force_authenticate(user=self.parent)
+        response = self.client.get(self.report_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+
+class WeeklyReviewViewTests(APITestCase):
+    def setUp(self):
+        self.parent = User.objects.create_user(
+            username="parent_test", password="password123", role=User.Role.PARENT
+        )
+        self.child = User.objects.create_user(
+            username="child_test",
+            password="password123",
+            role=User.Role.CHILD,
+            first_name="Али",
+        )
+        self.task = Task.objects.create(
+            child=self.child,
+            created_by=self.parent,
+            title="Уборка комнаты",
+            weekly_price=Decimal("900.00"),
+            schedule_type=Task.ScheduleType.FLEXIBLE,
+            target_count=3,
+            is_active=True,
+        )
+        self.url = reverse("task-weekly-review")
+
+    def test_weekly_review_success(self):
+        self.client.force_authenticate(user=self.parent)
+        log_date = date(2025, 10, 20)
+        TaskLog.objects.create(
+            task=self.task,
+            date=log_date,
+            status=TaskLog.Status.APPROVED,
+            earned_amount=Decimal("300.00"),
+        )
+
+        response = self.client.get(
+            self.url, {"child_id": self.child.pk, "week_start": "2025-10-20"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["taskId"], self.task.pk)
+        self.assertEqual(data[0]["summary"]["approvedCount"], 1)
+        self.assertEqual(len(data[0]["logs"]), 1)
+
+    def test_weekly_review_missing_child_id(self):
+        self.client.force_authenticate(user=self.parent)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("child_id", response.json()["detail"])
+
+    def test_weekly_review_invalid_date_format(self):
+        self.client.force_authenticate(user=self.parent)
+        response = self.client.get(
+            self.url, {"child_id": self.child.pk, "week_start": "invalid-date"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("week_start", response.json()["detail"])
+
+    def test_weekly_review_empty_result(self):
+        self.client.force_authenticate(user=self.parent)
+        other_child = User.objects.create_user(
+            username="empty_child", role=User.Role.CHILD
+        )
+        response = self.client.get(self.url, {"child_id": other_child.pk})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), [])
+</file>
+
 <file path="frontend/package.json">
 {
   "name": "app",
@@ -7677,77 +7686,6 @@ export function useFamilyMembers() {
     "tailwindcss": "^4",
     "typescript": "^5"
   }
-}
-</file>
-
-<file path="frontend/src/app/parent/profile/page.tsx">
-"use client"
-
-import { useMe } from "@/hooks/useMe"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { LogOut, User } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { PushNotificationSettings } from "@/components/PushNotificationSettings"
-
-export default function ParentProfilePage() {
-  const { me, ready } = useMe()
-
-  const handleLogout = async () => {
-    await fetch("/bff/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-
-      <Card className="border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-center gap-4 p-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary-soft text-brand-warning-strong">
-            <User className="h-8 w-8" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <Avatar className="h-16 w-16">
-                <AvatarImage src={me?.avatar_url ?? undefined} />
-                <AvatarFallback className="bg-brand-primary-soft text-brand-warning-strong text-lg">
-                  {(me?.first_name || "?").slice(0, 1)}
-                </AvatarFallback>
-              </Avatar>
-              <Badge
-                variant="secondary"
-                className="bg-brand-primary-soft text-brand-warning-strong"
-              >
-                Родитель
-              </Badge>
-            </div>
-            <span className="text-xs text-text-muted">
-              {me?.telegram_id ? `Telegram ID: ${me.telegram_id}` : "Вход через OAuth"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-      <PushNotificationSettings />
-
-      <Card className="border-app-surface bg-app-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-text-main">Сессия</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <Button variant="destructive" size="sm" className="h-9 w-full" onClick={handleLogout}>
-            <LogOut className="mr-1.5 h-3.5 w-3.5" />
-            Выйти
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  )
 }
 </file>
 
@@ -7847,54 +7785,6 @@ export function AuthButtons() {
     </div>
   )
 }
-</file>
-
-<file path="backend/pyproject.toml">
-[project]
-name = "motivation-backend"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-    "Django>=5.0,<6.0",
-    "djangorestframework",
-    "djangorestframework-simplejwt>=5.3.0",
-    "init-data-py==1.0.1",
-    "psycopg2-binary",
-    "django-cors-headers",
-    "dotenv==0.9.9",
-    "django-stubs==6.1.2",
-    "djangorestframework-stubs==3.18.1",
-    "dj-database-url==3.1.2",
-    "whitenoise>=6.6.0",
-    "pywebpush==2.5.0"
-]
-
-[tool.mypy]
-plugins = ["mypy_django_plugin.main"]
-
-[tool.django-stubs]
-django_settings_module = "config.settings"
-
-[tool.vercel]
-entrypoint = "config.wsgi:application"
-
-[tool.vercel.scripts]
-build = "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py ensure_superuser"
-</file>
-
-<file path="backend/requirements.txt">
-Django>=5.0,<6.0
-djangorestframework
-djangorestframework-simplejwt
-init-data-py==1.0.1
-psycopg2-binary
-django-cors-headers
-djangorestframework-simplejwt>=5.3.0
-dotenv==0.9.9
-django-stubs==6.1.2
-djangorestframework-stubs==3.18.1
-dj-database-url==3.1.2
-pywebpush==2.5.0
 </file>
 
 <file path="frontend/AI.md">
@@ -8171,6 +8061,77 @@ export default function ChildBalancePage() {
           </div>
         )}
       </section>
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/app/parent/profile/page.tsx">
+"use client"
+
+import { useMe } from "@/hooks/useMe"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { LogOut, User } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
+
+export default function ParentProfilePage() {
+  const { me, ready } = useMe()
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+
+      <Card className="border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-center gap-4 p-5">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-primary-soft text-brand-warning-strong">
+            <User className="h-8 w-8" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <Avatar className="h-16 w-16">
+                <AvatarImage src={me?.avatar_url ?? undefined} />
+                <AvatarFallback className="bg-brand-primary-soft text-brand-warning-strong text-lg">
+                  {(me?.first_name || "?").slice(0, 1)}
+                </AvatarFallback>
+              </Avatar>
+              <Badge
+                variant="secondary"
+                className="bg-brand-primary-soft text-brand-warning-strong"
+              >
+                Родитель
+              </Badge>
+            </div>
+            <span className="text-xs text-text-muted">
+              {me?.telegram_id ? `Telegram ID: ${me.telegram_id}` : "Вход через OAuth"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+      <PushNotificationSettings />
+
+      <Card className="border-app-surface bg-app-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-text-main">Сессия</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Button variant="destructive" size="sm" className="h-9 w-full" onClick={handleLogout}>
+            <LogOut className="mr-1.5 h-3.5 w-3.5" />
+            Выйти
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -8867,6 +8828,54 @@ class TelegramInitDataAuthentication(authentication.BaseAuthentication):
             user.save(update_fields=["avatar_url"])
 
         return (user, None)
+</file>
+
+<file path="backend/pyproject.toml">
+[project]
+name = "motivation-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=5.0,<6.0",
+    "djangorestframework",
+    "djangorestframework-simplejwt>=5.3.0",
+    "init-data-py==1.0.1",
+    "psycopg2-binary",
+    "django-cors-headers",
+    "dotenv==0.9.9",
+    "django-stubs==6.1.2",
+    "djangorestframework-stubs==3.18.1",
+    "dj-database-url==3.1.2",
+    "whitenoise>=6.6.0",
+    "pywebpush==2.5.0"
+]
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+
+[tool.vercel]
+entrypoint = "config.wsgi:application"
+
+[tool.vercel.scripts]
+build = "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py ensure_superuser"
+</file>
+
+<file path="backend/requirements.txt">
+Django>=5.0,<6.0
+djangorestframework
+djangorestframework-simplejwt
+init-data-py==1.0.1
+psycopg2-binary
+django-cors-headers
+djangorestframework-simplejwt>=5.3.0
+dotenv==0.9.9
+django-stubs==6.1.2
+djangorestframework-stubs==3.18.1
+dj-database-url==3.1.2
+pywebpush==2.5.0
 </file>
 
 <file path="frontend/src/app/child/tasks/page.tsx">
@@ -9887,243 +9896,6 @@ export function TaskFormSheet({
 }
 </file>
 
-<file path="vercel.json">
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "services": {
-    "frontend": {
-      "root": "frontend",
-      "framework": "nextjs",
-      "bindings": [
-        {
-          "type": "service",
-          "service": "backend",
-          "format": "url",
-          "env": "BACKEND_INTERNAL_URL"
-        }
-      ]
-    },
-    "backend": {
-      "root": "backend",
-      "framework": "django"
-    }
-  },
-  "crons": [
-    { "path": "/bff/cron/weekly", "schedule": "0 18 * * 0" },
-    { "path": "/bff/cron/daily", "schedule": "0 19 * * *" }
-  ],
-  "rewrites": [
-    { "source": "/admin/(.*)", "destination": { "service": "backend" } },
-    { "source": "/static/(.*)", "destination": { "service": "backend" } },
-    { "source": "/api/auth/(.*)", "destination": { "service": "frontend" } },
-    { "source": "/api/(.*)", "destination": { "service": "backend" } },
-    { "source": "/(.*)", "destination": { "service": "frontend" } }
-  ]
-}
-</file>
-
-<file path="backend/motivation/services/task_logs.py">
-# backend/motivation/services/task_logs.py
-from decimal import Decimal
-
-from django.contrib.auth.models import AnonymousUser
-from django.db import transaction
-from django.utils import timezone
-from django.core.exceptions import PermissionDenied, ValidationError
-
-from motivation.models import TaskLog, TaskLogHistory, User, WeeklyReport
-
-
-def _week_start(d):
-    return d - timezone.timedelta(days=d.weekday())
-
-
-def _parents_of_child(child: User):
-    """Все родители, состоящие в тех же семьях, что и ребёнок."""
-    family_ids = FamilyMembership.objects.filter(user=child).values_list(
-        "family_id", flat=True
-    )
-    return User.objects.filter(
-        role=User.Role.PARENT,
-        family_memberships__family_id__in=family_ids,
-    ).distinct()
-
-
-def _notify_parents_about_submission(log: TaskLog) -> None:
-    """Push родителям, когда ребёнок отметил задание (DONE_BY_CHILD).
-
-    Не бросает исключений: push не должен ломать основной флоу.
-    """
-    child = log.task.child
-    child_name = child.first_name or child.username or "Ребёнок"
-    title = "Задание на проверку"
-    body = f"{child_name} отметил «{log.task.title}»."
-
-    for parent in _parents_of_child(child):
-        try:
-            send_push_to_user(parent, title, body, url="/parent/review")
-        except Exception:
-            logger.exception("push to parent %s failed", parent.id)
-
-
-def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
-    """Проверяет права пользователя на смену статуса лога."""
-    if not (user and user.is_authenticated):
-        return
-
-    is_child = getattr(user, "role", None) == User.Role.CHILD
-    is_parent = getattr(user, "role", None) == User.Role.PARENT
-
-    if is_child and log.task.child.pk != user.id:
-        raise PermissionDenied("Ребёнок не может изменять чужие задания.")
-    if is_child and new_status in (
-        TaskLog.Status.APPROVED,
-        TaskLog.Status.REJECTED,
-    ):
-        raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
-    if not is_child and not is_parent:
-        raise PermissionDenied("Роль не задана.")
-
-
-def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
-    """Записывает историю, обновляет поля лога, пересчитывает earnings."""
-    from django.contrib.auth.models import (
-        AnonymousUser,
-    )  # локально, чтобы не тянуть в модуль
-
-    old_status = log.status
-
-    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
-    changed_by_user = None if is_anon else user
-    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
-
-    TaskLogHistory.objects.create(
-        log=log,
-        old_status=old_status,
-        new_status=new_status,
-        changed_by=changed_by_user,
-    )
-
-    log.status = new_status
-    log.updated_by = changed_by_user
-    log.updated_by_parent = is_parent_user
-
-    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
-
-    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
-        log.earned_amount = Decimal("0.00")
-        update_fields.append("earned_amount")
-
-    log.save(update_fields=update_fields)
-
-    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
-    if log.task.pk:
-        start_date = log.date - timezone.timedelta(days=log.date.weekday())
-        end_date = start_date + timezone.timedelta(days=6)
-        recalculate_task_logs_earnings(log.task, start_date, end_date)
-
-
-def is_week_closed(task, log_date) -> bool:
-    """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
-    start = _week_start(log_date)
-    return WeeklyReport.objects.filter(
-        child_id=task.child_id,
-        start_date=start,
-        status=WeeklyReport.Status.CLOSED,
-    ).exists()
-
-
-def assert_week_open(task, log_date):
-    """Бросает ValidationError, если неделя закрыта."""
-
-    if is_week_closed(task, log_date):
-        raise ValidationError(
-            "Неделя закрыта. Изменять выполнения за закрытую неделю нельзя."
-        )
-
-
-def recalculate_task_logs_earnings(task, week_start, week_end):
-    """
-    Пересчитывает earned_amount для логов конкретного задания за неделю
-    в строгом хронологическом порядке с распределением остатка копеек.
-
-    Вызывается из change_task_log_status после изменения статуса лога.
-    Не вызывается из TaskLog.save() — это исключает рекурсию.
-    """
-    logs = list(
-        task.logs.filter(
-            date__range=[week_start, week_end],
-            status__in=[TaskLog.Status.APPROVED, TaskLog.Status.DONE_BY_CHILD],
-        ).order_by("date", "id")
-    )
-
-    if task.schedule_type == task.ScheduleType.FLEXIBLE:
-        runs = task.target_count or 1
-    else:
-        runs = len(task.target_days or [])
-
-    if runs <= 0:
-        return
-
-    total_cents = int(task.weekly_price * 100)
-    base_cents, remainder = divmod(total_cents, runs)
-
-    to_update = []
-    for index, log in enumerate(logs):
-        if index < runs:
-            cents = base_cents + (1 if index < remainder else 0)
-            new_earned = Decimal(cents) / Decimal("100")
-        else:
-            new_earned = Decimal("0.00")
-
-        if log.earned_amount != new_earned:
-            log.earned_amount = new_earned
-            to_update.append(log)
-
-    if to_update:
-        TaskLog.objects.bulk_update(to_update, ["earned_amount"])
-
-
-def assert_not_future(log_date):
-    if log_date > timezone.localdate():
-        raise ValidationError("Нельзя отмечать будущие дни.")
-
-
-@transaction.atomic
-def change_task_log_status(log_id, new_status, user):
-    """
-    Безопасно изменяет статус выполнения задания.
-
-    Пересчёт earned_amount за неделю выполняется здесь,
-    ровно один раз на изменение статуса.
-    """
-    log = TaskLog.objects.select_for_update().get(id=log_id)
-
-    _check_status_change_permission(log, new_status, user)
-
-    if new_status not in TaskLog.Status.values:
-        raise ValueError("Недопустимый статус выполнения.")
-
-    if log.status == new_status:
-        return log
-
-    assert_not_future(log.date)
-    assert_week_open(log.task, log.date)
-
-    old_status = log.status
-
-    _apply_status_change(log, new_status, user)
-
-    # Push родителям: только при переходе в DONE_BY_CHILD.
-    if (
-        old_status != TaskLog.Status.DONE_BY_CHILD
-        and new_status == TaskLog.Status.DONE_BY_CHILD
-    ):
-        _notify_parents_about_submission(log)
-
-    return log
-</file>
-
 <file path="frontend/src/app/globals.css">
 /* frontend/src/app/globals.css */
 @import "tailwindcss";
@@ -10816,6 +10588,41 @@ export function ParentReviewCard({
 }
 </file>
 
+<file path="vercel.json">
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "nextjs",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "backend",
+          "format": "url",
+          "env": "BACKEND_INTERNAL_URL"
+        }
+      ]
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "django"
+    }
+  },
+  "crons": [
+    { "path": "/api/v1/cron/weekly/", "schedule": "0 18 * * 0" },
+    { "path": "/api/v1/cron/daily/", "schedule": "0 19 * * *" }
+  ],
+  "rewrites": [
+    { "source": "/admin/(.*)", "destination": { "service": "backend" } },
+    { "source": "/static/(.*)", "destination": { "service": "backend" } },
+    { "source": "/api/auth/(.*)", "destination": { "service": "frontend" } },
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ]
+}
+</file>
+
 <file path="backend/motivation/serializers.py">
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -11031,6 +10838,208 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         if not obj.changed_by:
             return None
         return obj.changed_by.avatar_url or None
+</file>
+
+<file path="backend/motivation/services/task_logs.py">
+# backend/motivation/services/task_logs.py
+from decimal import Decimal
+
+from django.contrib.auth.models import AnonymousUser
+from django.db import transaction
+from django.utils import timezone
+from django.core.exceptions import PermissionDenied, ValidationError
+
+from motivation.models import TaskLog, TaskLogHistory, User, WeeklyReport
+
+
+def _week_start(d):
+    return d - timezone.timedelta(days=d.weekday())
+
+
+def _parents_of_child(child: User):
+    """Все родители, состоящие в тех же семьях, что и ребёнок."""
+    family_ids = FamilyMembership.objects.filter(user=child).values_list(
+        "family_id", flat=True
+    )
+    return User.objects.filter(
+        role=User.Role.PARENT,
+        family_memberships__family_id__in=family_ids,
+    ).distinct()
+
+
+def _notify_parents_about_submission(log: TaskLog) -> None:
+    """Push родителям, когда ребёнок отметил задание (DONE_BY_CHILD).
+
+    Не бросает исключений: push не должен ломать основной флоу.
+    """
+    child = log.task.child
+    child_name = child.first_name or child.username or "Ребёнок"
+    title = "Задание на проверку"
+    body = f"{child_name} отметил «{log.task.title}»."
+
+    for parent in _parents_of_child(child):
+        try:
+            send_push_to_user(parent, title, body, url="/parent/review")
+        except Exception:
+            logger.exception("push to parent %s failed", parent.id)
+
+
+def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
+    """Проверяет права пользователя на смену статуса лога."""
+    if not (user and user.is_authenticated):
+        return
+
+    is_child = getattr(user, "role", None) == User.Role.CHILD
+    is_parent = getattr(user, "role", None) == User.Role.PARENT
+
+    if is_child and log.task.child.pk != user.id:
+        raise PermissionDenied("Ребёнок не может изменять чужие задания.")
+    if is_child and new_status in (
+        TaskLog.Status.APPROVED,
+        TaskLog.Status.REJECTED,
+    ):
+        raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
+    if not is_child and not is_parent:
+        raise PermissionDenied("Роль не задана.")
+
+
+def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
+    """Записывает историю, обновляет поля лога, пересчитывает earnings."""
+    from django.contrib.auth.models import (
+        AnonymousUser,
+    )  # локально, чтобы не тянуть в модуль
+
+    old_status = log.status
+
+    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
+    changed_by_user = None if is_anon else user
+    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
+
+    TaskLogHistory.objects.create(
+        log=log,
+        old_status=old_status,
+        new_status=new_status,
+        changed_by=changed_by_user,
+    )
+
+    log.status = new_status
+    log.updated_by = changed_by_user
+    log.updated_by_parent = is_parent_user
+
+    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
+
+    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
+        log.earned_amount = Decimal("0.00")
+        update_fields.append("earned_amount")
+
+    log.save(update_fields=update_fields)
+
+    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
+    if log.task.pk:
+        start_date = log.date - timezone.timedelta(days=log.date.weekday())
+        end_date = start_date + timezone.timedelta(days=6)
+        recalculate_task_logs_earnings(log.task, start_date, end_date)
+
+
+def is_week_closed(task, log_date) -> bool:
+    """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
+    start = _week_start(log_date)
+    return WeeklyReport.objects.filter(
+        child_id=task.child_id,
+        start_date=start,
+        status=WeeklyReport.Status.CLOSED,
+    ).exists()
+
+
+def assert_week_open(task, log_date):
+    """Бросает ValidationError, если неделя закрыта."""
+
+    if is_week_closed(task, log_date):
+        raise ValidationError(
+            "Неделя закрыта. Изменять выполнения за закрытую неделю нельзя."
+        )
+
+
+def recalculate_task_logs_earnings(task, week_start, week_end):
+    """
+    Пересчитывает earned_amount для логов конкретного задания за неделю
+    в строгом хронологическом порядке с распределением остатка копеек.
+
+    Вызывается из change_task_log_status после изменения статуса лога.
+    Не вызывается из TaskLog.save() — это исключает рекурсию.
+    """
+    logs = list(
+        task.logs.filter(
+            date__range=[week_start, week_end],
+            status__in=[TaskLog.Status.APPROVED, TaskLog.Status.DONE_BY_CHILD],
+        ).order_by("date", "id")
+    )
+
+    if task.schedule_type == task.ScheduleType.FLEXIBLE:
+        runs = task.target_count or 1
+    else:
+        runs = len(task.target_days or [])
+
+    if runs <= 0:
+        return
+
+    total_cents = int(task.weekly_price * 100)
+    base_cents, remainder = divmod(total_cents, runs)
+
+    to_update = []
+    for index, log in enumerate(logs):
+        if index < runs:
+            cents = base_cents + (1 if index < remainder else 0)
+            new_earned = Decimal(cents) / Decimal("100")
+        else:
+            new_earned = Decimal("0.00")
+
+        if log.earned_amount != new_earned:
+            log.earned_amount = new_earned
+            to_update.append(log)
+
+    if to_update:
+        TaskLog.objects.bulk_update(to_update, ["earned_amount"])
+
+
+def assert_not_future(log_date):
+    if log_date > timezone.localdate():
+        raise ValidationError("Нельзя отмечать будущие дни.")
+
+
+@transaction.atomic
+def change_task_log_status(log_id, new_status, user):
+    """
+    Безопасно изменяет статус выполнения задания.
+
+    Пересчёт earned_amount за неделю выполняется здесь,
+    ровно один раз на изменение статуса.
+    """
+    log = TaskLog.objects.select_for_update().get(id=log_id)
+
+    _check_status_change_permission(log, new_status, user)
+
+    if new_status not in TaskLog.Status.values:
+        raise ValueError("Недопустимый статус выполнения.")
+
+    if log.status == new_status:
+        return log
+
+    assert_not_future(log.date)
+    assert_week_open(log.task, log.date)
+
+    old_status = log.status
+
+    _apply_status_change(log, new_status, user)
+
+    # Push родителям: только при переходе в DONE_BY_CHILD.
+    if (
+        old_status != TaskLog.Status.DONE_BY_CHILD
+        and new_status == TaskLog.Status.DONE_BY_CHILD
+    ):
+        _notify_parents_about_submission(log)
+
+    return log
 </file>
 
 <file path="frontend/src/components/Navigation.tsx">
@@ -11377,6 +11386,430 @@ export default function Home() {
   }
 
   return null
+}
+</file>
+
+<file path="frontend/src/app/child/profile/page.tsx">
+import { Suspense } from "react"
+import { ProfileClient } from "./ProfileClient"
+
+export default function ChildProfilePage() {
+  return (
+    <Suspense
+      fallback={<div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>}
+    >
+      <ProfileClient />
+    </Suspense>
+  )
+}
+</file>
+
+<file path="frontend/src/app/parent/review/page.tsx">
+"use client"
+
+import { useMemo, useState } from "react"
+import { parentApi } from "@/services/parentApi"
+import { useChildren } from "@/hooks/useChildren"
+import { useRequireRole } from "@/hooks/useRequireRole"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useLogSyncStore } from "@/store/useLogSyncStore"
+import { LogStatusValue, WeeklyReviewItem } from "@/types/props"
+import { ParentReviewCard } from "@/components/ParentReviewCard"
+import { WeekNavigator } from "@/components/WeekNavigator"
+import { ChildFilter } from "@/components/parent/ChildFilter"
+import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
+import { ReviewTaskDetail } from "@/components/parent/ReviewTaskDetail"
+import { DebugJsonPanel } from "@/components/DebugJsonPanel"
+import { DEBUG_JSON } from "@/lib/debug"
+
+function normalizeDays(days?: number[] | string[]): number[] {
+  if (!Array.isArray(days)) return []
+  return days
+    .map((d) => {
+      if (typeof d === "number") return d
+      const map: Record<string, number> = {
+        mon: 1,
+        tue: 2,
+        wed: 3,
+        thu: 4,
+        fri: 5,
+        sat: 6,
+        sun: 7,
+      }
+      return map[String(d).toLowerCase()] ?? 0
+    })
+    .filter((d): d is number => d >= 1 && d <= 7)
+}
+
+function normalizeReview(item: any): WeeklyReviewItem {
+  return {
+    ...item,
+    weeklyPrice: item.weeklyPrice ?? 0,
+    targetDays: normalizeDays(item.targetDays),
+    targetCount: item.targetCount ?? 0,
+    logs: Array.isArray(item.logs) ? item.logs : [],
+    summary: item.summary ?? {
+      approvedCount: 0,
+      pendingCount: 0,
+      rejectedCount: 0,
+      calculatedAmount: 0,
+    },
+  }
+}
+
+export default function ParentReviewPage() {
+  const { ready } = useRequireRole("PARENT")
+
+  const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
+  const [activeTaskView, setActiveTaskView] = useState<WeeklyReviewItem | null>(null)
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const [rawReview, setRawReview] = useState<unknown>(null)
+
+  const weekStartIso = toISODate(weekStart)
+  const weekEndIso = toISODate(getWeekEnd(weekStart))
+
+  const { children, isLoading: childrenLoading } = useChildren()
+  const queryClient = useQueryClient()
+  const { queueChange } = useLogSyncStore()
+
+  const {
+    data: reviewsData = [],
+    isLoading: reviewsLoading,
+    error,
+  } = useQuery<WeeklyReviewItem[]>({
+    queryKey: ["weekly-review", selectedChildId, weekStartIso],
+    enabled: ready && !childrenLoading && children.length > 0,
+    queryFn: async () => {
+      let raw: any[]
+
+      if (selectedChildId === "ALL") {
+        const results = await Promise.all(
+          children.map((child: any) => parentApi.getWeeklyReview(child.id, weekStartIso)),
+        )
+        raw = results.flat()
+      } else {
+        const data = await parentApi.getWeeklyReview(Number(selectedChildId), weekStartIso)
+        raw = Array.isArray(data) ? data : []
+      }
+
+      if (DEBUG_JSON) {
+        setRawReview(raw)
+      }
+
+      return raw.map(normalizeReview)
+    },
+  })
+
+  const loading = childrenLoading || reviewsLoading
+
+  const nextDisabled = useMemo(() => {
+    const currentMonday = getMonday(new Date())
+    return weekStart >= currentMonday
+  }, [weekStart])
+
+  const handlePrev = () => {
+    setActiveTaskView(null)
+    setWeekStart((d) => addWeeks(d, -1))
+  }
+  const handleNext = () => {
+    if (!nextDisabled) {
+      setActiveTaskView(null)
+      setWeekStart((d) => addWeeks(d, 1))
+    }
+  }
+
+  const invalidateCurrentWeek = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["weekly-review", selectedChildId, weekStartIso],
+    })
+  }
+
+  const handleApprove = async (logId: number) => {
+    try {
+      await parentApi.bulkApproveLogs([logId])
+      invalidateCurrentWeek()
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || error?.response?.data?.error
+      if (error?.response?.status === 400 && detail) {
+        alert(detail)
+      }
+      console.error("Ошибка подтверждения:", error)
+    }
+  }
+
+  const handleApproveAll = async (logIds: number[]) => {
+    try {
+      await parentApi.bulkApproveLogs(logIds)
+      invalidateCurrentWeek()
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || error?.response?.data?.error
+      if (error?.response?.status === 400 && detail) {
+        alert(detail)
+      }
+      console.error("Ошибка массового подтверждения:", error)
+    }
+  }
+
+  const handleChangeLogStatus = async (
+    logId: number | null,
+    status: LogStatusValue,
+    taskId?: number,
+    date?: string,
+  ) => {
+    if (!taskId || !date) return
+
+    const cached = queryClient.getQueryData<WeeklyReviewItem[]>([
+      "weekly-review",
+      selectedChildId,
+      weekStartIso,
+    ])
+    const currentItem = cached?.find((it) => it.taskId === taskId)
+    if (currentItem?.weekClosed) {
+      console.warn("[review] week is closed, ignoring status change")
+      return
+    }
+
+    const updateCache = (oldData: any) => {
+      if (!oldData) return oldData
+      return (oldData as WeeklyReviewItem[]).map((item) => {
+        if (item.taskId !== taskId) return item
+        if (item.weekClosed) return item
+
+        const existingLogIndex = item.logs.findIndex((l) => l.date === date)
+        const updatedLogs = [...item.logs]
+        const runs = item.targetCount || item.targetDays?.length || 1
+        const pricePerRun = Number(item.weeklyPrice) / runs
+        const oldStatus = existingLogIndex >= 0 ? item.logs[existingLogIndex].status : "NONE"
+
+        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
+
+        if (existingLogIndex >= 0) {
+          updatedLogs[existingLogIndex] = {
+            ...updatedLogs[existingLogIndex],
+            status,
+            earned_amount: earnedAmount,
+          }
+        } else {
+          updatedLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
+        }
+
+        let currentAmount = Number(item.summary.calculatedAmount || 0)
+        if (oldStatus !== "APPROVED" && status === "APPROVED") currentAmount += pricePerRun
+        if (oldStatus === "APPROVED" && status !== "APPROVED") currentAmount -= pricePerRun
+
+        return {
+          ...item,
+          summary: {
+            ...item.summary,
+            calculatedAmount: Math.max(0, currentAmount).toFixed(2),
+          },
+          logs: updatedLogs,
+        }
+      })
+    }
+
+    queryClient.setQueryData(["weekly-review", selectedChildId, weekStartIso], updateCache)
+
+    if (activeTaskView && activeTaskView.taskId === taskId) {
+      setActiveTaskView((prev) => (prev ? updateCache([prev])[0] : prev))
+    }
+
+    queueChange({ logId, taskId, date, status }, queryClient)
+  }
+
+  if (!ready) {
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
+  }
+
+  if (activeTaskView) {
+    return (
+      <ReviewTaskDetail
+        item={activeTaskView}
+        onBack={() => setActiveTaskView(null)}
+        onApprove={handleApprove}
+        onChangeLogStatus={handleChangeLogStatus}
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-6 pb-20">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Проверка заданий</h1>
+      </div>
+
+      <WeekNavigator
+        weekStart={weekStartIso}
+        weekEnd={weekEndIso}
+        onPrev={handlePrev}
+        onNext={handleNext}
+        disableNext={nextDisabled}
+      />
+
+      <ChildFilter
+        children={children}
+        selectedChildId={selectedChildId}
+        onChange={setSelectedChildId}
+      />
+
+      {DEBUG_JSON && (
+        <DebugJsonPanel
+          title={`weekly-review · child=${selectedChildId} · week=${weekStartIso}`}
+          data={error ? { error: String(error), raw: rawReview } : rawReview}
+        />
+      )}
+
+      {loading ? (
+        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
+      ) : reviewsData.length === 0 ? (
+        <div className="py-12 text-center text-sm text-text-muted">Нет заданий на проверку</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {reviewsData.map((item) => (
+            <ParentReviewCard
+              key={`${item.taskId}-${item.weekStart}`}
+              item={item}
+              onApproveLog={handleApprove}
+              onApproveAll={handleApproveAll}
+              onOpenDetail={(rev) => setActiveTaskView(rev)}
+              onChangeLogStatus={handleChangeLogStatus}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+</file>
+
+<file path="frontend/src/services/parentApi.ts">
+import { api } from "@/lib/axios"
+import { LogStatusValue } from "@/types/props"
+
+export const parentApi = {
+  // Все запросы — строго на BFF-роуты Next.js (/...).
+  // Заголовки авторизации (X-Parent-Telegram-Id и т.п.) подставляются
+  // на стороне Route Handlers, см. AI.md / BFF Pattern.
+
+  async getChildren() {
+    const res = await api.get("/children")
+    return res.data
+  },
+
+  async getTasks(childId?: number) {
+    const res = await api.get("/tasks", childId ? { params: { child_id: childId } } : undefined)
+    return res.data
+  },
+
+  async createTask(data: {
+    title: string
+    description: string
+    weekly_price: number
+    child: number
+    schedule_type: "FLEXIBLE" | "FIXED"
+    target_count?: number | null
+    target_days?: number[]
+    is_active?: boolean
+  }) {
+    const res = await api.post("/tasks", data)
+    return res.data
+  },
+
+  async updateTask(id: number, data: any) {
+    const res = await api.put(`/tasks/${id}`, data)
+    return res.data
+  },
+
+  async deleteTask(id: number) {
+    await api.delete(`/tasks/${id}`)
+  },
+
+  async getTaskLogs(childId?: number, date?: string) {
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (date) params.date = date
+    const res = await api.get("/task-logs", { params })
+    return res.data
+  },
+
+  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
+    const res = await api.post("/task-logs", data)
+    return res.data
+  },
+
+  async bulkApproveLogs(logIds: number[]) {
+    const res = await api.post("/task-logs/bulk-approve", {
+      log_ids: logIds,
+    })
+    return res.data
+  },
+
+  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
+    const res = await api.patch(`/task-logs/${logId}`, { status })
+    return res.data
+  },
+
+  async getWeeklyReports(childId?: number, weekStart?: string) {
+    const params: Record<string, any> = {}
+    if (childId) params.child_id = childId
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/parent/reports", { params })
+    return res.data
+  },
+
+  async closeWeeklyReport(
+    reportId: number,
+    data: { is_payout_confirmed: boolean; manual_adjustment?: number; comment?: string },
+  ) {
+    const res = await api.patch(`/parent/reports/${reportId}/close`, data)
+    return res.data
+  },
+
+  async getWeeklyReview(childId: number, weekStart?: string) {
+    const params: Record<string, any> = { child_id: childId }
+    if (weekStart) params.week_start = weekStart
+    const res = await api.get("/tasks/weekly-review", { params })
+    return res.data
+  },
+
+  async getTaskLogHistory(logId: number) {
+    const res = await api.get(`/task-logs/${logId}/history`)
+    return res.data
+  },
+  async closeWeek(payload: {
+    child_id: number
+    week_start: string
+    is_payout_confirmed: boolean
+    manual_adjustment?: number
+    comment?: string
+  }) {
+    const res = await api.post("/tasks/close-week", payload)
+    return res.data
+  },
+  async getCurrentInvite() {
+    const res = await api.get("/invites")
+    return res.data as {
+      id: number
+      code: string
+      expires_at: string
+      is_used: boolean
+    }
+  },
+
+  async createInvite() {
+    const res = await api.post("/invites")
+    return res.data as {
+      id: number
+      code: string
+      expires_at: string
+      is_used: boolean
+    }
+  },
+
+  async getFamilyMembers() {
+    const res = await api.get("/family/members")
+    return res.data
+  },
 }
 </file>
 
@@ -12264,430 +12697,6 @@ class PushSubscription(models.Model):
 
     def __str__(self):
         return f"Push для {self.user.username} ({self.pk})"
-</file>
-
-<file path="frontend/src/app/child/profile/page.tsx">
-import { Suspense } from "react"
-import { ProfileClient } from "./ProfileClient"
-
-export default function ChildProfilePage() {
-  return (
-    <Suspense
-      fallback={<div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>}
-    >
-      <ProfileClient />
-    </Suspense>
-  )
-}
-</file>
-
-<file path="frontend/src/app/parent/review/page.tsx">
-"use client"
-
-import { useMemo, useState } from "react"
-import { parentApi } from "@/services/parentApi"
-import { useChildren } from "@/hooks/useChildren"
-import { useRequireRole } from "@/hooks/useRequireRole"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useLogSyncStore } from "@/store/useLogSyncStore"
-import { LogStatusValue, WeeklyReviewItem } from "@/types/props"
-import { ParentReviewCard } from "@/components/ParentReviewCard"
-import { WeekNavigator } from "@/components/WeekNavigator"
-import { ChildFilter } from "@/components/parent/ChildFilter"
-import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
-import { ReviewTaskDetail } from "@/components/parent/ReviewTaskDetail"
-import { DebugJsonPanel } from "@/components/DebugJsonPanel"
-import { DEBUG_JSON } from "@/lib/debug"
-
-function normalizeDays(days?: number[] | string[]): number[] {
-  if (!Array.isArray(days)) return []
-  return days
-    .map((d) => {
-      if (typeof d === "number") return d
-      const map: Record<string, number> = {
-        mon: 1,
-        tue: 2,
-        wed: 3,
-        thu: 4,
-        fri: 5,
-        sat: 6,
-        sun: 7,
-      }
-      return map[String(d).toLowerCase()] ?? 0
-    })
-    .filter((d): d is number => d >= 1 && d <= 7)
-}
-
-function normalizeReview(item: any): WeeklyReviewItem {
-  return {
-    ...item,
-    weeklyPrice: item.weeklyPrice ?? 0,
-    targetDays: normalizeDays(item.targetDays),
-    targetCount: item.targetCount ?? 0,
-    logs: Array.isArray(item.logs) ? item.logs : [],
-    summary: item.summary ?? {
-      approvedCount: 0,
-      pendingCount: 0,
-      rejectedCount: 0,
-      calculatedAmount: 0,
-    },
-  }
-}
-
-export default function ParentReviewPage() {
-  const { ready } = useRequireRole("PARENT")
-
-  const [selectedChildId, setSelectedChildId] = useState<string>("ALL")
-  const [activeTaskView, setActiveTaskView] = useState<WeeklyReviewItem | null>(null)
-  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
-  const [rawReview, setRawReview] = useState<unknown>(null)
-
-  const weekStartIso = toISODate(weekStart)
-  const weekEndIso = toISODate(getWeekEnd(weekStart))
-
-  const { children, isLoading: childrenLoading } = useChildren()
-  const queryClient = useQueryClient()
-  const { queueChange } = useLogSyncStore()
-
-  const {
-    data: reviewsData = [],
-    isLoading: reviewsLoading,
-    error,
-  } = useQuery<WeeklyReviewItem[]>({
-    queryKey: ["weekly-review", selectedChildId, weekStartIso],
-    enabled: ready && !childrenLoading && children.length > 0,
-    queryFn: async () => {
-      let raw: any[]
-
-      if (selectedChildId === "ALL") {
-        const results = await Promise.all(
-          children.map((child: any) => parentApi.getWeeklyReview(child.id, weekStartIso)),
-        )
-        raw = results.flat()
-      } else {
-        const data = await parentApi.getWeeklyReview(Number(selectedChildId), weekStartIso)
-        raw = Array.isArray(data) ? data : []
-      }
-
-      if (DEBUG_JSON) {
-        setRawReview(raw)
-      }
-
-      return raw.map(normalizeReview)
-    },
-  })
-
-  const loading = childrenLoading || reviewsLoading
-
-  const nextDisabled = useMemo(() => {
-    const currentMonday = getMonday(new Date())
-    return weekStart >= currentMonday
-  }, [weekStart])
-
-  const handlePrev = () => {
-    setActiveTaskView(null)
-    setWeekStart((d) => addWeeks(d, -1))
-  }
-  const handleNext = () => {
-    if (!nextDisabled) {
-      setActiveTaskView(null)
-      setWeekStart((d) => addWeeks(d, 1))
-    }
-  }
-
-  const invalidateCurrentWeek = () => {
-    queryClient.invalidateQueries({
-      queryKey: ["weekly-review", selectedChildId, weekStartIso],
-    })
-  }
-
-  const handleApprove = async (logId: number) => {
-    try {
-      await parentApi.bulkApproveLogs([logId])
-      invalidateCurrentWeek()
-    } catch (error: any) {
-      const detail = error?.response?.data?.detail || error?.response?.data?.error
-      if (error?.response?.status === 400 && detail) {
-        alert(detail)
-      }
-      console.error("Ошибка подтверждения:", error)
-    }
-  }
-
-  const handleApproveAll = async (logIds: number[]) => {
-    try {
-      await parentApi.bulkApproveLogs(logIds)
-      invalidateCurrentWeek()
-    } catch (error: any) {
-      const detail = error?.response?.data?.detail || error?.response?.data?.error
-      if (error?.response?.status === 400 && detail) {
-        alert(detail)
-      }
-      console.error("Ошибка массового подтверждения:", error)
-    }
-  }
-
-  const handleChangeLogStatus = async (
-    logId: number | null,
-    status: LogStatusValue,
-    taskId?: number,
-    date?: string,
-  ) => {
-    if (!taskId || !date) return
-
-    const cached = queryClient.getQueryData<WeeklyReviewItem[]>([
-      "weekly-review",
-      selectedChildId,
-      weekStartIso,
-    ])
-    const currentItem = cached?.find((it) => it.taskId === taskId)
-    if (currentItem?.weekClosed) {
-      console.warn("[review] week is closed, ignoring status change")
-      return
-    }
-
-    const updateCache = (oldData: any) => {
-      if (!oldData) return oldData
-      return (oldData as WeeklyReviewItem[]).map((item) => {
-        if (item.taskId !== taskId) return item
-        if (item.weekClosed) return item
-
-        const existingLogIndex = item.logs.findIndex((l) => l.date === date)
-        const updatedLogs = [...item.logs]
-        const runs = item.targetCount || item.targetDays?.length || 1
-        const pricePerRun = Number(item.weeklyPrice) / runs
-        const oldStatus = existingLogIndex >= 0 ? item.logs[existingLogIndex].status : "NONE"
-
-        const earnedAmount = status === "CANCELLED" || status === "REJECTED" ? 0 : pricePerRun
-
-        if (existingLogIndex >= 0) {
-          updatedLogs[existingLogIndex] = {
-            ...updatedLogs[existingLogIndex],
-            status,
-            earned_amount: earnedAmount,
-          }
-        } else {
-          updatedLogs.push({ id: -Date.now(), date, status, earned_amount: earnedAmount })
-        }
-
-        let currentAmount = Number(item.summary.calculatedAmount || 0)
-        if (oldStatus !== "APPROVED" && status === "APPROVED") currentAmount += pricePerRun
-        if (oldStatus === "APPROVED" && status !== "APPROVED") currentAmount -= pricePerRun
-
-        return {
-          ...item,
-          summary: {
-            ...item.summary,
-            calculatedAmount: Math.max(0, currentAmount).toFixed(2),
-          },
-          logs: updatedLogs,
-        }
-      })
-    }
-
-    queryClient.setQueryData(["weekly-review", selectedChildId, weekStartIso], updateCache)
-
-    if (activeTaskView && activeTaskView.taskId === taskId) {
-      setActiveTaskView((prev) => (prev ? updateCache([prev])[0] : prev))
-    }
-
-    queueChange({ logId, taskId, date, status }, queryClient)
-  }
-
-  if (!ready) {
-    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
-  }
-
-  if (activeTaskView) {
-    return (
-      <ReviewTaskDetail
-        item={activeTaskView}
-        onBack={() => setActiveTaskView(null)}
-        onApprove={handleApprove}
-        onChangeLogStatus={handleChangeLogStatus}
-      />
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-6 pb-20">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Проверка заданий</h1>
-      </div>
-
-      <WeekNavigator
-        weekStart={weekStartIso}
-        weekEnd={weekEndIso}
-        onPrev={handlePrev}
-        onNext={handleNext}
-        disableNext={nextDisabled}
-      />
-
-      <ChildFilter
-        children={children}
-        selectedChildId={selectedChildId}
-        onChange={setSelectedChildId}
-      />
-
-      {DEBUG_JSON && (
-        <DebugJsonPanel
-          title={`weekly-review · child=${selectedChildId} · week=${weekStartIso}`}
-          data={error ? { error: String(error), raw: rawReview } : rawReview}
-        />
-      )}
-
-      {loading ? (
-        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
-      ) : reviewsData.length === 0 ? (
-        <div className="py-12 text-center text-sm text-text-muted">Нет заданий на проверку</div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {reviewsData.map((item) => (
-            <ParentReviewCard
-              key={`${item.taskId}-${item.weekStart}`}
-              item={item}
-              onApproveLog={handleApprove}
-              onApproveAll={handleApproveAll}
-              onOpenDetail={(rev) => setActiveTaskView(rev)}
-              onChangeLogStatus={handleChangeLogStatus}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-</file>
-
-<file path="frontend/src/services/parentApi.ts">
-import { api } from "@/lib/axios"
-import { LogStatusValue } from "@/types/props"
-
-export const parentApi = {
-  // Все запросы — строго на BFF-роуты Next.js (/...).
-  // Заголовки авторизации (X-Parent-Telegram-Id и т.п.) подставляются
-  // на стороне Route Handlers, см. AI.md / BFF Pattern.
-
-  async getChildren() {
-    const res = await api.get("/children")
-    return res.data
-  },
-
-  async getTasks(childId?: number) {
-    const res = await api.get("/tasks", childId ? { params: { child_id: childId } } : undefined)
-    return res.data
-  },
-
-  async createTask(data: {
-    title: string
-    description: string
-    weekly_price: number
-    child: number
-    schedule_type: "FLEXIBLE" | "FIXED"
-    target_count?: number | null
-    target_days?: number[]
-    is_active?: boolean
-  }) {
-    const res = await api.post("/tasks", data)
-    return res.data
-  },
-
-  async updateTask(id: number, data: any) {
-    const res = await api.put(`/tasks/${id}`, data)
-    return res.data
-  },
-
-  async deleteTask(id: number) {
-    await api.delete(`/tasks/${id}`)
-  },
-
-  async getTaskLogs(childId?: number, date?: string) {
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-    if (date) params.date = date
-    const res = await api.get("/task-logs", { params })
-    return res.data
-  },
-
-  async createTaskLog(data: { task: number; date: string; status: LogStatusValue }) {
-    const res = await api.post("/task-logs", data)
-    return res.data
-  },
-
-  async bulkApproveLogs(logIds: number[]) {
-    const res = await api.post("/task-logs/bulk-approve", {
-      log_ids: logIds,
-    })
-    return res.data
-  },
-
-  async updateTaskLogStatus(logId: number, status: LogStatusValue) {
-    const res = await api.patch(`/task-logs/${logId}`, { status })
-    return res.data
-  },
-
-  async getWeeklyReports(childId?: number, weekStart?: string) {
-    const params: Record<string, any> = {}
-    if (childId) params.child_id = childId
-    if (weekStart) params.week_start = weekStart
-    const res = await api.get("/parent/reports", { params })
-    return res.data
-  },
-
-  async closeWeeklyReport(
-    reportId: number,
-    data: { is_payout_confirmed: boolean; manual_adjustment?: number; comment?: string },
-  ) {
-    const res = await api.patch(`/parent/reports/${reportId}/close`, data)
-    return res.data
-  },
-
-  async getWeeklyReview(childId: number, weekStart?: string) {
-    const params: Record<string, any> = { child_id: childId }
-    if (weekStart) params.week_start = weekStart
-    const res = await api.get("/tasks/weekly-review", { params })
-    return res.data
-  },
-
-  async getTaskLogHistory(logId: number) {
-    const res = await api.get(`/task-logs/${logId}/history`)
-    return res.data
-  },
-  async closeWeek(payload: {
-    child_id: number
-    week_start: string
-    is_payout_confirmed: boolean
-    manual_adjustment?: number
-    comment?: string
-  }) {
-    const res = await api.post("/tasks/close-week", payload)
-    return res.data
-  },
-  async getCurrentInvite() {
-    const res = await api.get("/invites")
-    return res.data as {
-      id: number
-      code: string
-      expires_at: string
-      is_used: boolean
-    }
-  },
-
-  async createInvite() {
-    const res = await api.post("/invites")
-    return res.data as {
-      id: number
-      code: string
-      expires_at: string
-      is_used: boolean
-    }
-  },
-
-  async getFamilyMembers() {
-    const res = await api.get("/family/members")
-    return res.data
-  },
-}
 </file>
 
 <file path="frontend/src/app/layout.tsx">
