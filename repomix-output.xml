@@ -215,171 +215,6 @@ vercel.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="frontend/src/components/parent/WeeklyReportCard.tsx">
-"use client"
-
-import Link from "next/link"
-import { Card, CardContent } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { ChevronRight, CheckCircle2, Clock3 } from "lucide-react"
-import { formatMoney } from "@/lib/money"
-import { cn } from "@/lib/utils"
-
-export interface WeeklyReportItem {
-  id: number | null
-  child: number
-  start_date: string
-  end_date: string
-  status: "DRAFT" | "REVIEW" | "CLOSED"
-  calculated_amount: string
-  manual_adjustment: string
-  total_paid: string
-  final_sum: string
-  is_payout_confirmed: boolean
-  can_close: boolean
-  has_pending_tasks?: boolean
-}
-
-interface WeeklyReportCardProps {
-  report: WeeklyReportItem
-  childName: string
-  childAvatar?: string | null
-  onCloseWeek?: (report: WeeklyReportItem) => void
-  isClosing?: boolean
-}
-
-export function WeeklyReportCard({
-  report,
-  childName,
-  childAvatar,
-  onCloseWeek,
-  isClosing = false,
-}: WeeklyReportCardProps) {
-  const isClosed = report.status === "CLOSED" || report.is_payout_confirmed
-  const adjustment = Number(report.manual_adjustment || 0)
-  const finalAmount = isClosed ? report.total_paid : report.final_sum
-
-  return (
-    <Card className="rounded-card border-app-surface bg-app-card py-0 shadow-xs">
-      <CardContent className="flex flex-col gap-4 p-4">
-        {/* Шапка: аватар, имя и статус */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-3">
-            <Avatar className="h-10 w-10 shrink-0">
-              <AvatarImage src={childAvatar ?? undefined} />
-              <AvatarFallback className="bg-brand-primary-soft text-sm font-bold text-brand-warning-strong">
-                {(childName || "?").slice(0, 1).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <span className="truncate text-base font-bold text-text-main">{childName}</span>
-          </div>
-
-          <Badge
-            variant="secondary"
-            className={cn(
-              "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-              isClosed
-                ? "bg-brand-success-soft text-brand-success-strong"
-                : "bg-brand-primary text-brand-action-text",
-            )}
-          >
-            {isClosed ? "Выплачено" : "Ждёт проверки"}
-          </Badge>
-        </div>
-
-        {/* Финансовые показатели */}
-        <div className="grid grid-cols-3 gap-2 border-t border-app-surface pt-3 tabular-nums">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-text-muted">Заработано</span>
-            <span className="text-sm font-bold text-text-main">
-              {formatMoney(report.calculated_amount)}
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-text-muted">Корректировка</span>
-            <span
-              className={cn(
-                "text-sm font-bold",
-                adjustment < 0 ? "text-finance-negative" : "text-finance-positive",
-              )}
-            >
-              {adjustment >= 0 ? `+${formatMoney(adjustment)}` : formatMoney(adjustment)}
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-0.5 text-right">
-            <span className="text-[11px] text-text-muted">К выплате</span>
-            <span className="text-sm font-bold text-text-main">{formatMoney(finalAmount)}</span>
-          </div>
-        </div>
-
-        {/* Действия */}
-        {!isClosed && (
-          <div className="flex flex-col gap-2">
-            <Link
-              href={`/parent/review?child_id=${report.child}&week_start=${report.start_date}`}
-              className="flex min-h-10 items-center justify-between gap-2 rounded-button bg-brand-warning-soft px-3 py-2 text-xs font-semibold text-brand-warning-strong transition-colors hover:bg-brand-warning-soft/80"
-            >
-              <span className="leading-snug">Проверить задания ребёнка</span>
-              <ChevronRight className="h-4 w-4 shrink-0" />
-            </Link>
-
-            <Button
-              type="button"
-              disabled={!report.can_close || isClosing}
-              onClick={() => onCloseWeek?.(report)}
-              className={cn(
-                "h-auto min-h-10 w-full whitespace-normal rounded-button px-3 py-2 text-center text-xs font-semibold leading-snug",
-                report.can_close
-                  ? "bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
-                  : "bg-app-surface text-text-muted opacity-100",
-              )}
-            >
-              {report.can_close ? (
-                <>
-                  <CheckCircle2 className="mr-1.5 h-4 w-4 shrink-0" />
-                  {isClosing ? "Закрываем..." : "Закрыть неделю и выплатить"}
-                </>
-              ) : (
-                <>
-                  <Clock3 className="mr-1.5 h-4 w-4 shrink-0" />
-                  Закрытие после окончания недели
-                </>
-              )}
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-</file>
-
-<file path="frontend/src/components/ui/label.tsx">
-"use client"
-
-import * as React from "react"
-import { cn } from "cn"
-
-function Label({ className, ...props }: React.ComponentProps<"label">) {
-  return (
-    <label
-      data-slot="label"
-      className={cn(
-        "flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-export { Label }
-</file>
-
 <file path="backend/.env.example">
 TELEGRAM_BOT_TOKEN = ""
 BFF_SERVICE_USERNAME=
@@ -2134,6 +1969,149 @@ export function OnboardingDots({ total, active }: OnboardingDotsProps) {
 }
 </file>
 
+<file path="frontend/src/components/parent/WeeklyReportCard.tsx">
+"use client"
+
+import Link from "next/link"
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { ChevronRight, CheckCircle2, Clock3 } from "lucide-react"
+import { formatMoney } from "@/lib/money"
+import { cn } from "@/lib/utils"
+
+export interface WeeklyReportItem {
+  id: number | null
+  child: number
+  start_date: string
+  end_date: string
+  status: "DRAFT" | "REVIEW" | "CLOSED"
+  calculated_amount: string
+  manual_adjustment: string
+  total_paid: string
+  final_sum: string
+  is_payout_confirmed: boolean
+  can_close: boolean
+  has_pending_tasks?: boolean
+}
+
+interface WeeklyReportCardProps {
+  report: WeeklyReportItem
+  childName: string
+  childAvatar?: string | null
+  onCloseWeek?: (report: WeeklyReportItem) => void
+  isClosing?: boolean
+}
+
+export function WeeklyReportCard({
+  report,
+  childName,
+  childAvatar,
+  onCloseWeek,
+  isClosing = false,
+}: WeeklyReportCardProps) {
+  const isClosed = report.status === "CLOSED" || report.is_payout_confirmed
+  const adjustment = Number(report.manual_adjustment || 0)
+  const finalAmount = isClosed ? report.total_paid : report.final_sum
+
+  return (
+    <Card className="rounded-card border-app-surface bg-app-card py-0 shadow-xs">
+      <CardContent className="flex flex-col gap-4 p-4">
+        {/* Шапка: аватар, имя и статус */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="h-10 w-10 shrink-0">
+              <AvatarImage src={childAvatar ?? undefined} />
+              <AvatarFallback className="bg-brand-primary-soft text-sm font-bold text-brand-warning-strong">
+                {(childName || "?").slice(0, 1).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="truncate text-base font-bold text-text-main">{childName}</span>
+          </div>
+
+          <Badge
+            variant="secondary"
+            className={cn(
+              "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+              isClosed
+                ? "bg-brand-success-soft text-brand-success-strong"
+                : "bg-brand-primary text-brand-action-text",
+            )}
+          >
+            {isClosed ? "Выплачено" : "Ждёт проверки"}
+          </Badge>
+        </div>
+
+        {/* Финансовые показатели */}
+        <div className="grid grid-cols-3 gap-2 border-t border-app-surface pt-3 tabular-nums">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] text-text-muted">Заработано</span>
+            <span className="text-sm font-bold text-text-main">
+              {formatMoney(report.calculated_amount)}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] text-text-muted">Корректировка</span>
+            <span
+              className={cn(
+                "text-sm font-bold",
+                adjustment < 0 ? "text-finance-negative" : "text-finance-positive",
+              )}
+            >
+              {adjustment >= 0 ? `+${formatMoney(adjustment)}` : formatMoney(adjustment)}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-0.5 text-right">
+            <span className="text-[11px] text-text-muted">К выплате</span>
+            <span className="text-sm font-bold text-text-main">{formatMoney(finalAmount)}</span>
+          </div>
+        </div>
+
+        {/* Действия */}
+        {!isClosed && (
+          <div className="flex flex-col gap-2">
+            <Link
+              href={`/parent/review?child_id=${report.child}&week_start=${report.start_date}`}
+              className="flex min-h-10 items-center justify-between gap-2 rounded-button bg-brand-warning-soft px-3 py-2 text-xs font-semibold text-brand-warning-strong transition-colors hover:bg-brand-warning-soft/80"
+            >
+              <span className="leading-snug">Проверить задания ребёнка</span>
+              <ChevronRight className="h-4 w-4 shrink-0" />
+            </Link>
+
+            <Button
+              type="button"
+              disabled={!report.can_close || isClosing}
+              onClick={() => onCloseWeek?.(report)}
+              className={cn(
+                "h-auto min-h-10 w-full whitespace-normal rounded-button px-3 py-2 text-center text-xs font-semibold leading-snug",
+                report.can_close
+                  ? "bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
+                  : "bg-app-surface text-text-muted opacity-100",
+              )}
+            >
+              {report.can_close ? (
+                <>
+                  <CheckCircle2 className="mr-1.5 h-4 w-4 shrink-0" />
+                  {isClosing ? "Закрываем..." : "Закрыть неделю и выплатить"}
+                </>
+              ) : (
+                <>
+                  <Clock3 className="mr-1.5 h-4 w-4 shrink-0" />
+                  Закрытие после окончания недели
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+</file>
+
 <file path="frontend/src/components/ui/carousel.tsx">
 "use client"
 
@@ -2366,6 +2344,28 @@ export {
   CarouselNext,
   useCarousel,
 }
+</file>
+
+<file path="frontend/src/components/ui/label.tsx">
+"use client"
+
+import * as React from "react"
+import { cn } from "cn"
+
+function Label({ className, ...props }: React.ComponentProps<"label">) {
+  return (
+    <label
+      data-slot="label"
+      className={cn(
+        "flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Label }
 </file>
 
 <file path="frontend/src/hooks/useRequireProfile.ts">
@@ -3582,196 +3582,6 @@ export function OnboardingSlides({ onDone }: OnboardingSlidesProps) {
         </Button>
       </div>
     </div>
-  )
-}
-</file>
-
-<file path="frontend/src/components/PushNotificationSettings.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { Switch } from "@/components/ui/switch"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Bell, Share, Send } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
-import { api } from "@/lib/axios"
-
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
-  const rawData = window.atob(base64)
-  const outputArray = new Uint8Array(rawData.length)
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i)
-  }
-  return outputArray
-}
-
-export function PushNotificationSettings() {
-  const [status, setStatus] = useState<
-    "loading" | "unsupported" | "ios-browser" | "denied" | "ready"
-  >("loading")
-  const [isSubscribed, setIsSubscribed] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [sending, setSending] = useState(false)
-  const [testMsg, setTestMsg] = useState<string | null>(null)
-
-  const handleTest = async () => {
-    setSending(true)
-    setTestMsg(null)
-    try {
-      await api.post("/push/test")
-      setTestMsg("Тестовое уведомление отправлено")
-    } catch (e: any) {
-      setTestMsg(e.response?.data?.error || "Не удалось отправить")
-    } finally {
-      setSending(false)
-    }
-  }
-
-  useEffect(() => {
-    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as any).standalone === true
-
-    if (isIos && !isStandalone) {
-      setStatus("ios-browser")
-      return
-    }
-
-    if (
-      !("serviceWorker" in navigator) ||
-      !("PushManager" in window) ||
-      !("Notification" in window)
-    ) {
-      setStatus("unsupported")
-      return
-    }
-
-    if (Notification.permission === "denied") {
-      setStatus("denied")
-      return
-    }
-
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((reg) => reg.pushManager.getSubscription())
-      .then((sub) => {
-        setIsSubscribed(!!sub)
-        setStatus("ready")
-      })
-      .catch(() => setStatus("unsupported"))
-  }, [])
-
-  const handleToggle = async (checked: boolean) => {
-    if (busy) return
-    setBusy(true)
-    setTestMsg(null)
-
-    try {
-      const reg = await navigator.serviceWorker.ready
-
-      if (checked) {
-        const permission = await Notification.requestPermission()
-        if (permission !== "granted") {
-          setStatus(permission === "denied" ? "denied" : "ready")
-          setIsSubscribed(false)
-          return
-        }
-
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidKey),
-        })
-
-        const json = sub.toJSON()
-        await api.post("/push/subscribe", {
-          endpoint: json.endpoint,
-          p256dh: json.keys?.p256dh,
-          auth: json.keys?.auth,
-        })
-
-        setIsSubscribed(true)
-      } else {
-        const sub = await reg.pushManager.getSubscription()
-        if (sub) {
-          await api.post("/push/unsubscribe", { endpoint: sub.endpoint })
-          await sub.unsubscribe()
-        }
-        setIsSubscribed(false)
-      }
-    } catch (e) {
-      console.error("Ошибка управления подпиской:", e)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (status === "loading" || status === "unsupported") return null
-
-  return (
-    <Card id="notifications" className="rounded-card border-app-surface bg-app-card shadow-sm">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-          <Bell className="h-4 w-4 text-text-muted" />
-          Уведомления
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
-        {status === "ios-browser" && (
-          <div className="flex items-start gap-2 rounded-xl bg-app-surface p-3 text-xs text-text-muted">
-            <Share className="mt-0.5 h-4 w-4 shrink-0 text-text-main" />
-            <span>
-              Чтобы включить уведомления на iPhone, нажмите <strong>«Поделиться»</strong> внизу
-              экрана и выберите <strong>«На экран Домой»</strong>.
-            </span>
-          </div>
-        )}
-
-        {status === "denied" && (
-          <p className="text-xs text-finance-negative">
-            Уведомления заблокированы в настройках браузера или телефона. Разрешите их в настройках
-            устройства.
-          </p>
-        )}
-
-        {status === "ready" && (
-          <>
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-text-main">Push-уведомления</span>
-                <span className="text-xs text-text-muted">
-                  Напоминания о проверке заданий и итогах недели
-                </span>
-              </div>
-              <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
-            </div>
-
-            {isSubscribed && (
-              <>
-                <Separator />
-                <div className="flex flex-col gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-9 w-full justify-center gap-2 rounded-button bg-app-surface text-text-main hover:bg-app-bg"
-                    disabled={sending}
-                    onClick={handleTest}
-                  >
-                    <Send className="h-3.5 w-3.5 text-text-muted" />
-                    {sending ? "Отправка…" : "Проверить уведомление"}
-                  </Button>
-                  {testMsg && <p className="text-center text-xs text-text-muted">{testMsg}</p>}
-                </div>
-              </>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
   )
 }
 </file>
@@ -7180,6 +6990,196 @@ export function ProfileMenuSheet() {
 }
 </file>
 
+<file path="frontend/src/components/PushNotificationSettings.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Bell, Share, Send } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
+import { api } from "@/lib/axios"
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
+export function PushNotificationSettings() {
+  const [status, setStatus] = useState<
+    "loading" | "unsupported" | "ios-browser" | "denied" | "ready"
+  >("loading")
+  const [isSubscribed, setIsSubscribed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [testMsg, setTestMsg] = useState<string | null>(null)
+
+  const handleTest = async () => {
+    setSending(true)
+    setTestMsg(null)
+    try {
+      await api.post("/push/test")
+      setTestMsg("Тестовое уведомление отправлено")
+    } catch (e: any) {
+      setTestMsg(e.response?.data?.error || "Не удалось отправить")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  useEffect(() => {
+    const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as any).standalone === true
+
+    if (isIos && !isStandalone) {
+      setStatus("ios-browser")
+      return
+    }
+
+    if (
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window) ||
+      !("Notification" in window)
+    ) {
+      setStatus("unsupported")
+      return
+    }
+
+    if (Notification.permission === "denied") {
+      setStatus("denied")
+      return
+    }
+
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        setIsSubscribed(!!sub)
+        setStatus("ready")
+      })
+      .catch(() => setStatus("unsupported"))
+  }, [])
+
+  const handleToggle = async (checked: boolean) => {
+    if (busy) return
+    setBusy(true)
+    setTestMsg(null)
+
+    try {
+      const reg = await navigator.serviceWorker.ready
+
+      if (checked) {
+        const permission = await Notification.requestPermission()
+        if (permission !== "granted") {
+          setStatus(permission === "denied" ? "denied" : "ready")
+          setIsSubscribed(false)
+          return
+        }
+
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        })
+
+        const json = sub.toJSON()
+        await api.post("/push/subscribe", {
+          endpoint: json.endpoint,
+          p256dh: json.keys?.p256dh,
+          auth: json.keys?.auth,
+        })
+
+        setIsSubscribed(true)
+      } else {
+        const sub = await reg.pushManager.getSubscription()
+        if (sub) {
+          await api.post("/push/unsubscribe", { endpoint: sub.endpoint })
+          await sub.unsubscribe()
+        }
+        setIsSubscribed(false)
+      }
+    } catch (e) {
+      console.error("Ошибка управления подпиской:", e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (status === "loading" || status === "unsupported") return null
+
+  return (
+    <Card id="notifications" className="rounded-card border-app-surface bg-app-card shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+          <Bell className="h-4 w-4 text-text-muted" />
+          Уведомления
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 pt-0">
+        {status === "ios-browser" && (
+          <div className="flex items-start gap-2 rounded-xl bg-app-surface p-3 text-xs text-text-muted">
+            <Share className="mt-0.5 h-4 w-4 shrink-0 text-text-main" />
+            <span>
+              Чтобы включить уведомления на iPhone, нажмите <strong>«Поделиться»</strong> внизу
+              экрана и выберите <strong>«На экран Домой»</strong>.
+            </span>
+          </div>
+        )}
+
+        {status === "denied" && (
+          <p className="text-xs text-finance-negative">
+            Уведомления заблокированы в настройках браузера или телефона. Разрешите их в настройках
+            устройства.
+          </p>
+        )}
+
+        {status === "ready" && (
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-text-main">Push-уведомления</span>
+                <span className="text-xs text-text-muted">
+                  Напоминания о проверке заданий и итогах недели
+                </span>
+              </div>
+              <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
+            </div>
+
+            {isSubscribed && (
+              <>
+                <Separator />
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-9 w-full justify-center gap-2 rounded-button bg-app-surface text-text-main hover:bg-app-bg"
+                    disabled={sending}
+                    onClick={handleTest}
+                  >
+                    <Send className="h-3.5 w-3.5 text-text-muted" />
+                    {sending ? "Отправка…" : "Проверить уведомление"}
+                  </Button>
+                  {testMsg && <p className="text-center text-xs text-text-muted">{testMsg}</p>}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+</file>
+
 <file path="frontend/src/components/TaskCard.tsx">
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -7381,66 +7381,6 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
-}
-</file>
-
-<file path="frontend/src/components/WeekNavigator.tsx">
-"use client"
-
-import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight } from "lucide-react"
-
-interface WeekNavigatorProps {
-  weekStart: string
-  weekEnd: string
-  onPrev: () => void
-  onNext: () => void
-  disableNext?: boolean
-}
-
-const fmtRange = (start: string, end: string) => {
-  const s = new Date(`${start}T12:00:00`)
-  const e = new Date(`${end}T12:00:00`)
-  const sLabel = s.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "")
-  const eLabel = e.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "")
-  return `${sLabel} – ${eLabel} ${e.getFullYear()}`
-}
-
-export function WeekNavigator({
-  weekStart,
-  weekEnd,
-  onPrev,
-  onNext,
-  disableNext = false,
-}: WeekNavigatorProps) {
-  return (
-    <div className="flex items-center justify-between rounded-card border border-app-surface bg-app-card px-2 py-1.5 shadow-xs">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onPrev}
-        aria-label="Предыдущая неделя"
-        className="cursor-pointer rounded-button text-text-main hover:bg-app-surface"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </Button>
-
-      <span className="text-sm font-semibold text-text-main tabular-nums">
-        {fmtRange(weekStart, weekEnd)}
-      </span>
-
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onNext}
-        disabled={disableNext}
-        aria-label="Следующая неделя"
-        className="cursor-pointer rounded-button text-text-main hover:bg-app-surface"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </Button>
-    </div>
-  )
 }
 </file>
 
@@ -8270,298 +8210,62 @@ export function ReviewTaskDetail({
 }
 </file>
 
-<file path="frontend/src/app/parent/profile/page.tsx">
+<file path="frontend/src/components/WeekNavigator.tsx">
 "use client"
 
-import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { LogOut, Pencil, Check, X, Users, UserPlus } from "lucide-react"
-
-import { useMe } from "@/hooks/useMe"
-import { useFamilyMembers } from "@/hooks/useChildren"
-import { authApi } from "@/services/authApi"
-import { parentApi } from "@/services/parentApi"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
-import { PushNotificationSettings } from "@/components/PushNotificationSettings"
-import { InviteCodeDialog } from "@/components/auth/InviteCodeDialog"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 
-export default function ParentProfilePage() {
-  const { me, ready } = useMe()
-  const queryClient = useQueryClient()
-  const { members } = useFamilyMembers()
+interface WeekNavigatorProps {
+  weekStart: string
+  weekEnd: string
+  onPrev: () => void
+  onNext: () => void
+  disableNext?: boolean
+}
 
-  const [isEditing, setIsEditing] = useState(false)
-  const [editForm, setEditForm] = useState({ first_name: "", last_name: "" })
-  const [inviteOpen, setInviteOpen] = useState(false)
-  const [inviteData, setInviteData] = useState<{ code: string; expires_at?: string } | null>(null)
+const fmtRange = (start: string, end: string) => {
+  const s = new Date(`${start}T12:00:00`)
+  const e = new Date(`${end}T12:00:00`)
+  const sLabel = s.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "")
+  const eLabel = e.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "")
+  return `${sLabel} – ${eLabel} ${e.getFullYear()}`
+}
 
-  const generateInviteMutation = useMutation({
-    mutationFn: () => parentApi.createInvite(),
-    onSuccess: (data) => {
-      setInviteData(data)
-    },
-  })
-
-  const handleOpenInvite = () => {
-    setInviteOpen(true)
-    if (!inviteData) {
-      generateInviteMutation.mutate()
-    }
-  }
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (data: { first_name: string; last_name: string }) => authApi.updateMe(data),
-    onSuccess: (updatedData) => {
-      queryClient.setQueryData(["me"], updatedData)
-      queryClient.invalidateQueries({ queryKey: ["me"] })
-      queryClient.invalidateQueries({ queryKey: ["family-members"] })
-      setIsEditing(false)
-    },
-  })
-
-  const handleLogout = async () => {
-    await fetch("/bff/auth/logout", { method: "POST" })
-    window.location.href = "/"
-  }
-
-  const startEditing = () => {
-    setEditForm({
-      first_name: me?.first_name || "",
-      last_name: me?.last_name || "",
-    })
-    setIsEditing(true)
-  }
-
-  const saveProfile = () => {
-    updateProfileMutation.mutate({
-      first_name: editForm.first_name.trim(),
-      last_name: editForm.last_name.trim(),
-    })
-  }
-
-  if (!ready) {
-    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
-  }
-
-  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Родитель"
-  const initials =
-    [me?.first_name?.[0], me?.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"
-
+export function WeekNavigator({
+  weekStart,
+  weekEnd,
+  onPrev,
+  onNext,
+  disableNext = false,
+}: WeekNavigatorProps) {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
-        {!isEditing && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={startEditing}
-            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Изменить
-          </Button>
-        )}
-      </div>
-
-      {/* Карточка родителя */}
-      <Card className="rounded-card border-app-surface bg-app-card shadow-sm">
-        <CardContent className="flex items-start gap-4 p-4">
-          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
-            <AvatarImage src={me?.avatar_url ?? undefined} />
-            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-lg font-semibold text-brand-warning-strong">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-
-          {isEditing ? (
-            <div className="flex flex-1 flex-col gap-3">
-              <div className="flex flex-col gap-2">
-                <Input
-                  placeholder="Имя"
-                  value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
-                  className="h-9 rounded-input bg-app-surface"
-                />
-                <Input
-                  placeholder="Фамилия"
-                  value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
-                  className="h-9 rounded-input bg-app-surface"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsEditing(false)}
-                  className="h-8 text-text-muted"
-                >
-                  <X className="mr-1 h-3.5 w-3.5" />
-                  Отмена
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={saveProfile}
-                  disabled={updateProfileMutation.isPending || !editForm.first_name.trim()}
-                  className="h-8 rounded-button bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
-                >
-                  <Check className="mr-1 h-3.5 w-3.5" />
-                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5 pt-1">
-              <span className="text-lg font-bold leading-tight text-text-main">{fullName}</span>
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant="secondary"
-                  className="bg-brand-primary-soft text-brand-warning-strong"
-                >
-                  Родитель
-                </Badge>
-                {me?.family_name && (
-                  <span className="text-xs text-text-muted">{me.family_name}</span>
-                )}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Семья */}
-      <Card className="rounded-card border-app-surface bg-app-card shadow-sm">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
-              <Users className="h-4 w-4 text-text-muted" />
-              Моя семья
-            </CardTitle>
-            {me?.family_id && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleOpenInvite}
-                className="h-7 gap-1 px-2 text-xs text-text-main hover:bg-app-surface"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                Пригласить
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {me?.family_id ? (
-            <div className="mt-1 flex flex-col gap-3">
-              {members.map((member: any) => {
-                const memberName =
-                  [member.first_name, member.last_name].filter(Boolean).join(" ") || "Без имени"
-                return (
-                  <div key={member.id} className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={member.avatar_url ?? undefined} />
-                        <AvatarFallback className="bg-app-surface text-xs font-medium text-text-main">
-                          {memberName.slice(0, 1).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-text-main">{memberName}</span>
-                        <span className="text-xs text-text-muted">
-                          {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
-                        </span>
-                      </div>
-                    </div>
-                    {member.id === me.id && (
-                      <Badge variant="secondary" className="bg-app-surface text-text-muted">
-                        Вы
-                      </Badge>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-xs text-text-muted">Семья не привязана</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <PushNotificationSettings />
-
-      <Separator />
-
-      <Button variant="destructive" className="h-10 w-full rounded-button" onClick={handleLogout}>
-        <LogOut className="mr-2 h-4 w-4" />
-        Выйти из аккаунта
+    <div className="flex items-center justify-between rounded-card border border-app-surface bg-app-card px-2 py-1.5 shadow-xs">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onPrev}
+        aria-label="Предыдущая неделя"
+        className="cursor-pointer rounded-button text-text-main hover:bg-app-surface"
+      >
+        <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <InviteCodeDialog
-        open={inviteOpen}
-        code={inviteData?.code ?? ""}
-        expiresAt={inviteData?.expires_at}
-        onOpenChange={setInviteOpen}
-        onGenerateNew={async () => {
-          await generateInviteMutation.mutateAsync()
-        }}
-      />
+      <span className="text-sm font-semibold text-text-main tabular-nums">
+        {fmtRange(weekStart, weekEnd)}
+      </span>
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onNext}
+        disabled={disableNext}
+        aria-label="Следующая неделя"
+        className="cursor-pointer rounded-button text-text-main hover:bg-app-surface"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
     </div>
-  )
-}
-</file>
-
-<file path="frontend/src/components/ChildCard.tsx">
-import { Card, CardContent } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ChildCardProps } from "@/types/props"
-
-function calcAge(birthDate?: string | null): number | null {
-  if (!birthDate) return null
-  const b = new Date(birthDate)
-  if (isNaN(b.getTime())) return null
-  const now = new Date()
-  let age = now.getFullYear() - b.getFullYear()
-  const m = now.getMonth() - b.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
-  return age
-}
-
-export function ChildCard({ child, action }: ChildCardProps) {
-  const age = calcAge(child.birth_date)
-  const genderLabel = child.gender === "MALE" ? "Сын" : child.gender === "FEMALE" ? "Дочь" : null
-  const fullName =
-    [child.first_name, child.last_name].filter(Boolean).join(" ") || child.name || "Ребёнок"
-
-  return (
-    <Card className="rounded-card border-app-surface bg-app-card py-0 shadow-xs">
-      <CardContent className="flex items-center justify-between gap-3 p-3.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar className="h-11 w-11 shrink-0">
-            <AvatarImage src={child.avatar_url ?? undefined} />
-            <AvatarFallback className="bg-brand-primary-soft text-sm font-semibold text-brand-warning-strong">
-              {(fullName || "?").slice(0, 1).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate text-sm font-bold text-text-main">{fullName}</span>
-            <div className="flex items-center gap-1.5 text-xs text-text-muted">
-              {age !== null && <span>{age} лет</span>}
-              {age !== null && genderLabel && <span>•</span>}
-              {genderLabel && <span>{genderLabel}</span>}
-              {age === null && !genderLabel && <span>Профиль не заполнен</span>}
-            </div>
-          </div>
-        </div>
-        {action && <div className="shrink-0">{action}</div>}
-      </CardContent>
-    </Card>
   )
 }
 </file>
@@ -9634,6 +9338,253 @@ export default function ChildBalancePage() {
 }
 </file>
 
+<file path="frontend/src/app/parent/profile/page.tsx">
+"use client"
+
+import { useState } from "react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { LogOut, Pencil, Check, X, Users, UserPlus } from "lucide-react"
+
+import { useMe } from "@/hooks/useMe"
+import { useFamilyMembers } from "@/hooks/useChildren"
+import { authApi } from "@/services/authApi"
+import { parentApi } from "@/services/parentApi"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
+import { PushNotificationSettings } from "@/components/PushNotificationSettings"
+import { InviteCodeDialog } from "@/components/auth/InviteCodeDialog"
+
+export default function ParentProfilePage() {
+  const { me, ready } = useMe()
+  const queryClient = useQueryClient()
+  const { members } = useFamilyMembers()
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "" })
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteData, setInviteData] = useState<{ code: string; expires_at?: string } | null>(null)
+
+  const generateInviteMutation = useMutation({
+    mutationFn: () => parentApi.createInvite(),
+    onSuccess: (data) => {
+      setInviteData(data)
+    },
+  })
+
+  const handleOpenInvite = () => {
+    setInviteOpen(true)
+    if (!inviteData) {
+      generateInviteMutation.mutate()
+    }
+  }
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: { first_name: string; last_name: string }) => authApi.updateMe(data),
+    onSuccess: (updatedData) => {
+      queryClient.setQueryData(["me"], updatedData)
+      queryClient.invalidateQueries({ queryKey: ["me"] })
+      queryClient.invalidateQueries({ queryKey: ["family-members"] })
+      setIsEditing(false)
+    },
+  })
+
+  const handleLogout = async () => {
+    await fetch("/bff/auth/logout", { method: "POST" })
+    window.location.href = "/"
+  }
+
+  const startEditing = () => {
+    setEditForm({
+      first_name: me?.first_name || "",
+      last_name: me?.last_name || "",
+    })
+    setIsEditing(true)
+  }
+
+  const saveProfile = () => {
+    updateProfileMutation.mutate({
+      first_name: editForm.first_name.trim(),
+      last_name: editForm.last_name.trim(),
+    })
+  }
+
+  if (!ready) {
+    return <div className="py-8 text-center text-sm text-text-muted">Загрузка профиля...</div>
+  }
+
+  const fullName = [me?.first_name, me?.last_name].filter(Boolean).join(" ") || "Родитель"
+  const initials =
+    [me?.first_name?.[0], me?.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startEditing}
+            className="h-8 gap-1.5 text-text-muted hover:text-text-main"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Изменить
+          </Button>
+        )}
+      </div>
+
+      {/* Карточка родителя */}
+      <Card className="rounded-card border-app-surface bg-app-card shadow-sm">
+        <CardContent className="flex items-start gap-4 p-4">
+          <Avatar className="h-16 w-16 shrink-0 rounded-2xl">
+            <AvatarImage src={me?.avatar_url ?? undefined} />
+            <AvatarFallback className="rounded-2xl bg-brand-primary-soft text-lg font-semibold text-brand-warning-strong">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+
+          {isEditing ? (
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <Input
+                  placeholder="Имя"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  className="h-9 rounded-input bg-app-surface"
+                />
+                <Input
+                  placeholder="Фамилия"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  className="h-9 rounded-input bg-app-surface"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  className="h-8 text-text-muted"
+                >
+                  <X className="mr-1 h-3.5 w-3.5" />
+                  Отмена
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveProfile}
+                  disabled={updateProfileMutation.isPending || !editForm.first_name.trim()}
+                  className="h-8 rounded-button bg-brand-action text-brand-action-text hover:bg-brand-action-hover"
+                >
+                  <Check className="mr-1 h-3.5 w-3.5" />
+                  {updateProfileMutation.isPending ? "Сохранение..." : "Сохранить"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5 pt-1">
+              <span className="text-lg font-bold leading-tight text-text-main">{fullName}</span>
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="secondary"
+                  className="bg-brand-primary-soft text-brand-warning-strong"
+                >
+                  Родитель
+                </Badge>
+                {me?.family_name && (
+                  <span className="text-xs text-text-muted">{me.family_name}</span>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Семья */}
+      <Card className="rounded-card border-app-surface bg-app-card shadow-sm">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
+              <Users className="h-4 w-4 text-text-muted" />
+              Моя семья
+            </CardTitle>
+            {me?.family_id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleOpenInvite}
+                className="h-7 gap-1 px-2 text-xs text-text-main hover:bg-app-surface"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                Пригласить
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {me?.family_id ? (
+            <div className="mt-1 flex flex-col gap-3">
+              {members.map((member: any) => {
+                const memberName =
+                  [member.first_name, member.last_name].filter(Boolean).join(" ") || "Без имени"
+                return (
+                  <div key={member.id} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={member.avatar_url ?? undefined} />
+                        <AvatarFallback className="bg-app-surface text-xs font-medium text-text-main">
+                          {memberName.slice(0, 1).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-text-main">{memberName}</span>
+                        <span className="text-xs text-text-muted">
+                          {member.role === "PARENT" ? "Родитель" : "Ребёнок"}
+                        </span>
+                      </div>
+                    </div>
+                    {member.id === me.id && (
+                      <Badge variant="secondary" className="bg-app-surface text-text-muted">
+                        Вы
+                      </Badge>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">Семья не привязана</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <PushNotificationSettings />
+
+      <Separator />
+
+      <Button variant="destructive" className="h-10 w-full rounded-button" onClick={handleLogout}>
+        <LogOut className="mr-2 h-4 w-4" />
+        Выйти из аккаунта
+      </Button>
+
+      <InviteCodeDialog
+        open={inviteOpen}
+        code={inviteData?.code ?? ""}
+        expiresAt={inviteData?.expires_at}
+        onOpenChange={setInviteOpen}
+        onGenerateNew={async () => {
+          await generateInviteMutation.mutateAsync()
+        }}
+      />
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/app/parent/tasks/page.tsx">
 "use client"
 
@@ -9817,6 +9768,55 @@ export default function ParentTasksPage() {
         onSubmit={handleSubmitForm}
       />
     </div>
+  )
+}
+</file>
+
+<file path="frontend/src/components/ChildCard.tsx">
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { ChildCardProps } from "@/types/props"
+
+function calcAge(birthDate?: string | null): number | null {
+  if (!birthDate) return null
+  const b = new Date(birthDate)
+  if (isNaN(b.getTime())) return null
+  const now = new Date()
+  let age = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
+  return age
+}
+
+export function ChildCard({ child, action }: ChildCardProps) {
+  const age = calcAge(child.birth_date)
+  const genderLabel = child.gender === "MALE" ? "Сын" : child.gender === "FEMALE" ? "Дочь" : null
+  const fullName =
+    [child.first_name, child.last_name].filter(Boolean).join(" ") || child.name || "Ребёнок"
+
+  return (
+    <Card className="rounded-card border-app-surface bg-app-card py-0 shadow-xs">
+      <CardContent className="flex items-center justify-between gap-3 p-3.5">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className="h-11 w-11 shrink-0">
+            <AvatarImage src={child.avatar_url ?? undefined} />
+            <AvatarFallback className="bg-brand-primary-soft text-sm font-semibold text-brand-warning-strong">
+              {(fullName || "?").slice(0, 1).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm font-bold text-text-main">{fullName}</span>
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
+              {age !== null && <span>{age} лет</span>}
+              {age !== null && genderLabel && <span>•</span>}
+              {genderLabel && <span>{genderLabel}</span>}
+              {age === null && !genderLabel && <span>Профиль не заполнен</span>}
+            </div>
+          </div>
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </CardContent>
+    </Card>
   )
 }
 </file>
@@ -10782,228 +10782,6 @@ export default function ParentChildrenPage() {
 }
 </file>
 
-<file path="frontend/src/app/parent/reports/page.tsx">
-"use client"
-
-import { useMemo, useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { parentApi } from "@/services/parentApi"
-import { useChildren } from "@/hooks/useChildren"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, AlertCircle } from "lucide-react"
-import { useRouter } from "next/navigation"
-import { WeekNavigator } from "@/components/WeekNavigator"
-import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
-import type { WeeklyReportDraft } from "@/types/props"
-import { useRequireRole } from "@/hooks/useRequireRole"
-
-export default function ParentReportsPage() {
-  const router = useRouter()
-  const queryClient = useQueryClient()
-  const { children, isLoading: childrenLoading } = useChildren()
-
-  const [selectedChildId, setSelectedChildId] = useState<number | null>(null)
-  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
-
-  const weekStartIso = toISODate(weekStart)
-  const weekEndIso = toISODate(getWeekEnd(weekStart))
-  const { ready } = useRequireRole("PARENT")
-
-  const { data: reports = [], isLoading: reportsLoading } = useQuery<WeeklyReportDraft[]>({
-    queryKey: ["weekly-reports", selectedChildId, weekStartIso],
-    queryFn: () => parentApi.getWeeklyReports(selectedChildId || undefined, weekStartIso),
-    enabled: ready && !childrenLoading,
-  })
-
-  const closeWeekMutation = useMutation({
-    mutationFn: (payload: {
-      child_id: number
-      week_start: string
-      is_payout_confirmed: boolean
-      manual_adjustment?: number
-      comment?: string
-    }) => parentApi.closeWeek(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["weekly-reports"] })
-      queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
-    },
-  })
-
-  const loading = childrenLoading || reportsLoading
-
-  const nextDisabled = useMemo(() => {
-    const currentMonday = getMonday(new Date())
-    return weekStart >= currentMonday
-  }, [weekStart])
-
-  const handlePrev = () => setWeekStart((d) => addWeeks(d, -1))
-  const handleNext = () => {
-    if (!nextDisabled) setWeekStart((d) => addWeeks(d, 1))
-  }
-
-  const handleCloseWeek = (report: WeeklyReportDraft) => {
-    if (!report.can_close) return
-    closeWeekMutation.mutate({
-      child_id: report.child,
-      week_start: report.start_date,
-      is_payout_confirmed: true,
-    })
-  }
-
-  const goToReview = (childId: number, weekStartIso: string) => {
-    const params = new URLSearchParams()
-    params.set("child_id", String(childId))
-    params.set("week_start", weekStartIso)
-    router.push(`/parent/review?${params.toString()}`)
-  }
-
-  if (!ready) {
-    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight text-text-main">Недельные отчеты</h1>
-      </div>
-
-      <WeekNavigator
-        weekStart={weekStartIso}
-        weekEnd={weekEndIso}
-        onPrev={handlePrev}
-        onNext={handleNext}
-        disableNext={nextDisabled}
-      />
-
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <button
-          type="button"
-          onClick={() => setSelectedChildId(null)}
-          className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-            selectedChildId === null
-              ? "bg-brand-primary text-brand-dark shadow-xs"
-              : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface"
-          }`}
-        >
-          Все дети
-        </button>
-        {children.map((child: any) => (
-          <button
-            key={child.id}
-            type="button"
-            onClick={() => setSelectedChildId(child.id)}
-            className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
-              selectedChildId === child.id
-                ? "bg-brand-primary text-brand-dark shadow-xs"
-                : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface"
-            }`}
-          >
-            {child.first_name || child.name}
-          </button>
-        ))}
-      </div>
-
-      {loading ? (
-        <div className="py-12 text-center text-sm text-text-muted">Загрузка отчетов...</div>
-      ) : reports.length === 0 ? (
-        <div className="py-12 text-center text-sm text-text-muted">Нет доступных отчетов</div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {reports.map((report) => {
-            const childInfo = children.find((c: any) => c.id === report.child)
-            const isClosed = report.is_payout_confirmed || report.status === "CLOSED"
-            const canClose = report.can_close && !isClosed
-
-            return (
-              <Card
-                key={`${report.child}-${report.start_date}`}
-                className="border-app-surface bg-app-card shadow-sm"
-              >
-                <CardHeader className="border-b border-app-surface pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary-soft font-bold text-finance-pending">
-                        {(childInfo?.first_name || childInfo?.name || "Р")?.[0]}
-                      </div>
-                      <div className="flex flex-col">
-                        <CardTitle className="text-sm font-semibold text-text-main">
-                          {childInfo?.first_name || childInfo?.name || "Ребенок"}
-                        </CardTitle>
-                        <span className="text-xs text-text-muted">
-                          Период: {report.start_date} – {report.end_date}
-                        </span>
-                      </div>
-                    </div>
-                    <Badge
-                      className={
-                        isClosed
-                          ? "bg-finance-positive/10 text-finance-positive"
-                          : "bg-finance-pending/10 text-finance-pending"
-                      }
-                    >
-                      {isClosed ? "Выплачено" : "Ждет проверки"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-4 pt-4">
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="flex flex-col">
-                      <span className="text-text-muted">Заработано</span>
-                      <span className="font-bold text-text-main">{report.calculated_amount} ₽</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-text-muted">Корректировка</span>
-                      <span className="font-bold text-finance-positive">
-                        +{report.manual_adjustment} ₽
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-text-muted">Итого к выплате</span>
-                      <span className="font-extrabold text-text-main">{report.final_sum} ₽</span>
-                    </div>
-                  </div>
-
-                  {!isClosed && (
-                    <div className="flex flex-col gap-2 pt-2">
-                      <Button
-                        variant="outline"
-                        className="w-full cursor-pointer border-finance-pending/40 bg-finance-pending/5 text-finance-pending hover:bg-finance-pending/10"
-                        onClick={() => goToReview(report.child, report.start_date)}
-                      >
-                        <AlertCircle className="mr-2 h-4 w-4" />
-                        Есть задания на проверку — перейти в «Проверка»
-                      </Button>
-
-                      <Button
-                        className="w-full cursor-pointer bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
-                        onClick={() => handleCloseWeek(report)}
-                        disabled={!canClose || closeWeekMutation.isPending}
-                        title={
-                          canClose
-                            ? "Закрыть неделю и отметить выплату"
-                            : "Неделю можно закрыть только после воскресенья"
-                        }
-                      >
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        {canClose
-                          ? "Закрыть неделю и отметить выплату"
-                          : "Закрытие недоступно до окончания недели"}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/components/ParentReviewCard.tsx">
 "use client"
 
@@ -11594,6 +11372,165 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         if not obj.changed_by:
             return None
         return obj.changed_by.avatar_url or None
+</file>
+
+<file path="frontend/src/app/parent/reports/page.tsx">
+"use client"
+
+import { useMemo, useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { parentApi } from "@/services/parentApi"
+import { useChildren } from "@/hooks/useChildren"
+import { useRouter } from "next/navigation"
+import { WeekNavigator } from "@/components/WeekNavigator"
+import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
+import type { WeeklyReportDraft } from "@/types/props"
+import { useRequireRole } from "@/hooks/useRequireRole"
+import { WeeklyReportCard, type WeeklyReportItem } from "@/components/parent/WeeklyReportCard"
+
+export default function ParentReportsPage() {
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const { children, isLoading: childrenLoading } = useChildren()
+
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null)
+  const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const [closingKey, setClosingKey] = useState<string | null>(null)
+
+  const weekStartIso = toISODate(weekStart)
+  const weekEndIso = toISODate(getWeekEnd(weekStart))
+  const { ready } = useRequireRole("PARENT")
+
+  const { data: reports = [], isLoading: reportsLoading } = useQuery<WeeklyReportDraft[]>({
+    queryKey: ["weekly-reports", selectedChildId, weekStartIso],
+    queryFn: () => parentApi.getWeeklyReports(selectedChildId || undefined, weekStartIso),
+    enabled: ready && !childrenLoading,
+  })
+
+  const closeWeekMutation = useMutation({
+    mutationFn: (payload: {
+      child_id: number
+      week_start: string
+      is_payout_confirmed: boolean
+      manual_adjustment?: number
+      comment?: string
+    }) => parentApi.closeWeek(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["weekly-reports"] })
+      queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
+    },
+    onSettled: () => {
+      setClosingKey(null)
+    },
+  })
+
+  const loading = childrenLoading || reportsLoading
+
+  const nextDisabled = useMemo(() => {
+    const currentMonday = getMonday(new Date())
+    return weekStart >= currentMonday
+  }, [weekStart])
+
+  const handlePrev = () => setWeekStart((d) => addWeeks(d, -1))
+  const handleNext = () => {
+    if (!nextDisabled) setWeekStart((d) => addWeeks(d, 1))
+  }
+
+  const handleCloseWeek = (report: WeeklyReportItem) => {
+    if (!report.can_close) return
+    setClosingKey(`${report.child}-${report.start_date}`)
+    closeWeekMutation.mutate({
+      child_id: report.child,
+      week_start: report.start_date,
+      is_payout_confirmed: true,
+      manual_adjustment: Number(report.manual_adjustment) || 0,
+    })
+  }
+
+  const goToReview = (childId: number, weekStartIso: string) => {
+    const params = new URLSearchParams()
+    params.set("child_id", String(childId))
+    params.set("week_start", weekStartIso)
+    router.push(`/parent/review?${params.toString()}`)
+  }
+
+  if (!ready) {
+    return <div className="py-12 text-center text-sm text-text-muted">Загрузка...</div>
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold tracking-tight text-text-main">Недельные отчеты</h1>
+      </div>
+
+      <WeekNavigator
+        weekStart={weekStartIso}
+        weekEnd={weekEndIso}
+        onPrev={handlePrev}
+        onNext={handleNext}
+        disableNext={nextDisabled}
+      />
+
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => setSelectedChildId(null)}
+          className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+            selectedChildId === null
+              ? "bg-brand-primary text-brand-dark shadow-xs"
+              : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface"
+          }`}
+        >
+          Все дети
+        </button>
+        {children.map((child: any) => (
+          <button
+            key={child.id}
+            type="button"
+            onClick={() => setSelectedChildId(child.id)}
+            className={`cursor-pointer whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+              selectedChildId === child.id
+                ? "bg-brand-primary text-brand-dark shadow-xs"
+                : "border border-app-surface bg-app-card text-text-muted hover:bg-app-surface"
+            }`}
+          >
+            {child.first_name || child.name}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-sm text-text-muted">Загрузка отчетов...</div>
+      ) : reports.length === 0 ? (
+        <div className="py-12 text-center text-sm text-text-muted">Нет доступных отчетов</div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {reports.map((report) => {
+            const childInfo = children.find((c: any) => c.id === report.child)
+            const childName =
+              [childInfo?.first_name, childInfo?.last_name].filter(Boolean).join(" ") ||
+              childInfo?.name ||
+              "Ребенок"
+            const key = `${report.child}-${report.start_date}`
+
+            return (
+              <WeeklyReportCard
+                key={key}
+                report={report as WeeklyReportItem}
+                childName={childName}
+                childAvatar={childInfo?.avatar_url}
+                onCloseWeek={handleCloseWeek}
+                onReview={goToReview}
+                isClosing={closingKey === key && closeWeekMutation.isPending}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 </file>
 
 <file path="frontend/src/lib/axios.ts">

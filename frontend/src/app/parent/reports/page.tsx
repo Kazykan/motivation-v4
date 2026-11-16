@@ -144,7 +144,6 @@ export default function ParentReportsPage() {
                 childName={childName}
                 childAvatar={childInfo?.avatar_url}
                 onCloseWeek={handleCloseWeek}
-                onReview={goToReview}
                 isClosing={closingKey === key && closeWeekMutation.isPending}
               />
             )
