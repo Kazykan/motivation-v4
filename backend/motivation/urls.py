@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from backend.motivation.views.push import PushTestView
+from motivation.views.push import PushTestView
 from motivation.views.cron import CronDispatchView
 from .views import (
     UserViewSet,

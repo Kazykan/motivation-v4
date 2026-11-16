@@ -2,7 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.motivation.services.push import send_push_to_user
+from motivation.services.push import send_push_to_user
 from motivation.models import PushSubscription
 from .permissions import ServiceOrUserPermission, _is_authenticated
 
