@@ -35,18 +35,20 @@ export function ProfileMenuSheet() {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <button
-          type="button"
-          aria-label="Открыть меню профиля"
-          className="rounded-full transition active:scale-95"
-        >
-          <Avatar className="h-8 w-8">
-            <AvatarImage src={me.avatar_url ?? ""} alt="" />
-            <AvatarFallback>{me.first_name?.[0] ?? "?"}</AvatarFallback>
-          </Avatar>
-        </button>
-      </SheetTrigger>
+      <SheetTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Открыть меню профиля"
+            className="rounded-full transition active:scale-95"
+          >
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={me.avatar_url ?? ""} alt="" />
+              <AvatarFallback>{me.first_name?.[0] ?? "?"}</AvatarFallback>
+            </Avatar>
+          </button>
+        }
+      />
 
       <SheetContent side="bottom" className="rounded-t-2xl pb-8">
         <SheetHeader className="text-left">
