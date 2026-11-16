@@ -65,7 +65,7 @@ def send_daily_task_reminders() -> int:
 
 def send_push_to_user(user, title, body, url="/") -> int:
     private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
-    subject = getattr(settings, "VAPID_SUBJECT", None)
+    subject = getattr(settings, "VAPID_ADMIN_EMAIL", None)
 
     if not private_key or not subject:
         logger.error(
