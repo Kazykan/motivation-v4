@@ -34,7 +34,7 @@ export function OnboardingSlides({ onDone }: OnboardingSlidesProps) {
   }
 
   return (
-    <div className="-mx-4 -mt-6 flex min-h-[100dvh] flex-col pb-8">
+    <div className="flex min-h-[100dvh] flex-col pb-8">
       {/* Кнопка «Пропустить» */}
       <div className="flex justify-end px-4 pt-4">
         <button

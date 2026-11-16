@@ -226,7 +226,7 @@ export default function ParentReviewPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-text-main">Проверка заданий</h1>
       </div>

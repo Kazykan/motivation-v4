@@ -100,7 +100,7 @@ export default function Home() {
 
   if (phase === "no-auth") {
     return (
-      <div className="-mx-4 -mt-6 flex flex-col pb-8">
+      <div className="flex flex-col pb-8">
         <div className="relative w-full">
           <div className="relative w-full overflow-hidden" style={{ aspectRatio: "3 / 4" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

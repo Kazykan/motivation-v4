@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
       </head>
       <body
-        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main pb-20`}
+        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main`}
       >
         <AppShell>{children}</AppShell>
       </body>

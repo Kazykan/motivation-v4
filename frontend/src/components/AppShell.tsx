@@ -1,4 +1,3 @@
-// components/AppShell.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -21,15 +20,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
-        {/* Шапка — sticky, sibling main, без двойных паддингов */}
-        <header className="sticky top-0 z-20 flex items-center justify-end bg-background/80 px-4 py-2 backdrop-blur">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
+        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
+        <header className="sticky top-0 z-10 flex items-center justify-end bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
           <ProfileMenuSheet />
         </header>
 
-        {/* Контент */}
-        <main className="flex-1 px-4 pb-6 pt-2">{children}</main>
+        {/* Контент — px-4 здесь, один раз */}
+        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(56px+env(safe-area-inset-bottom))]">
+          {children}
+        </main>
       </div>
+
+      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
       <Navigation />
     </QueryClientProvider>
   )

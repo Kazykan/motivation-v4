@@ -2004,7 +2004,7 @@ export function OnboardingSlides({ onDone }: OnboardingSlidesProps) {
   }
 
   return (
-    <div className="-mx-4 -mt-6 flex min-h-[100dvh] flex-col pb-8">
+    <div className="flex min-h-[100dvh] flex-col pb-8">
       {/* Кнопка «Пропустить» */}
       <div className="flex justify-end px-4 pt-4">
         <button
@@ -2283,7 +2283,7 @@ export {
 
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
-import { cn } from "cn"
+import { cn } from "@/lib/utils"
 
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
@@ -2310,7 +2310,7 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
       data-slot="sheet-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/10 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
-        className
+        className,
       )}
       {...props}
     />
@@ -2335,7 +2335,7 @@ function SheetContent({
         data-side={side}
         className={cn(
           "fixed z-50 flex flex-col gap-4 bg-popover bg-clip-padding text-sm text-popover-foreground shadow-lg transition duration-200 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-ending-style:translate-y-[2.5rem] data-[side=bottom]:data-starting-style:translate-y-[2.5rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-ending-style:translate-x-[-2.5rem] data-[side=left]:data-starting-style:translate-x-[-2.5rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-ending-style:translate-x-[2.5rem] data-[side=right]:data-starting-style:translate-x-[2.5rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-ending-style:translate-y-[-2.5rem] data-[side=top]:data-starting-style:translate-y-[-2.5rem] data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
-          className
+          className,
         )}
         {...props}
       >
@@ -2343,16 +2343,9 @@ function SheetContent({
         {showCloseButton && (
           <SheetPrimitive.Close
             data-slot="sheet-close"
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-3 right-3"
-                size="icon-sm"
-              />
-            }
+            render={<Button variant="ghost" className="absolute top-3 right-3" size="icon-sm" />}
           >
-            <XIcon
-            />
+            <XIcon />
             <span className="sr-only">Close</span>
           </SheetPrimitive.Close>
         )}
@@ -2385,19 +2378,13 @@ function SheetTitle({ className, ...props }: SheetPrimitive.Title.Props) {
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn(
-        "font-heading text-base font-medium text-foreground",
-        className
-      )}
+      className={cn("font-heading text-base font-medium text-foreground", className)}
       {...props}
     />
   )
 }
 
-function SheetDescription({
-  className,
-  ...props
-}: SheetPrimitive.Description.Props) {
+function SheetDescription({ className, ...props }: SheetPrimitive.Description.Props) {
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
@@ -3356,7 +3343,7 @@ export function ProfileClient() {
   const profileIncomplete = !me?.birth_date || !me?.gender
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
         {!isEditing && (
@@ -3680,7 +3667,6 @@ export default function TelegramEntryPage() {
 </file>
 
 <file path="frontend/src/components/AppShell.tsx">
-// components/AppShell.tsx
 "use client"
 
 import { useEffect, useState } from "react"
@@ -3703,15 +3689,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
-        {/* Шапка — sticky, sibling main, без двойных паддингов */}
-        <header className="sticky top-0 z-20 flex items-center justify-end bg-background/80 px-4 py-2 backdrop-blur">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
+        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
+        <header className="sticky top-0 z-10 flex items-center justify-end bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
           <ProfileMenuSheet />
         </header>
 
-        {/* Контент */}
-        <main className="flex-1 px-4 pb-6 pt-2">{children}</main>
+        {/* Контент — px-4 здесь, один раз */}
+        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(56px+env(safe-area-inset-bottom))]">
+          {children}
+        </main>
       </div>
+
+      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
       <Navigation />
     </QueryClientProvider>
   )
@@ -4869,7 +4859,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
@@ -7139,7 +7129,7 @@ export function ReviewTaskDetail({
   const scheduledDays = item.targetDays ?? []
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -8145,12 +8135,109 @@ export function AuthButtons() {
 - Пользователь должен видеть визуальный индикатор фонового сохранения (статус синхронизации `isSyncing`), когда данные отправляются на бэкенд.
 - По завершении фоновых запросов обязательно производить инвалидацию соответствующих ключей кеша (`queryClient.invalidateQueries`) для поддержания актуальности данных.
 
-
 ## Правила работы с API (BFF Pattern)
+
 1. Клиентский код отправляет запросы только на локальные маршруты Next.js (`/api/...`).
 2. Внешний Django-бэкенд недоступен напрямую из браузера; запросы к нему осуществляются через Next.js Route Handlers.
 3. Передача секретных заголовков (Telegram ID, токены авторизации) выполняется на стороне сервера Next.js.
 
+# AI.md — Дизайн-система Motivation
+
+> Этот файл — **единственный источник правды** по визуалу.
+> Любой компонент, страница или фикс обязаны соответствовать правилам ниже.
+> Если правило мешает — сначала обнови AI.md, потом код.
+
+---
+
+## 1. Принципы
+
+- **Mobile-first Telegram Mini App.** Все экраны проектируются под ширину 360–430px.
+- **Один экран — одна задача.** Никаких перегруженных дашбордов.
+- **Спокойный, «бумажный» UI.** Мягкие тени, скругления 12–20px, без ярких акцентов кроме CTA.
+- **Никаких «магических» значений** в компонентах — только токены из §2.
+
+---
+
+## 2. Токены (CSS-переменные в `globals.css`)
+
+Все цвета/радиусы/тени задаются **только** через переменные. В JSX запрещено писать
+`bg-[#abc]`, `text-blue-500`, `rounded-lg` и т.п. вне `components/ui/*`.
+
+### Цвета
+
+| Токен                    | Назначение                     |
+| ------------------------ | ------------------------------ |
+| `--app-bg`               | Фон страницы                   |
+| `--app-surface`          | Фон карточек/инпутов           |
+| `--app-card`             | Фон «приподнятых» карточек     |
+| `--text-main`            | Основной текст                 |
+| `--text-muted`           | Второстепенный текст           |
+| `--brand-primary-soft`   | Мягкий брендовый фон (аватары) |
+| `--brand-action`         | Фон главной кнопки (CTA)       |
+| `--brand-action-text`    | Текст на CTA                   |
+| `--brand-action-hover`   | Hover CTA                      |
+| `--brand-warning-strong` | Акцент предупреждений          |
+| `--finance-pending`      | «Ожидает подтверждения»        |
+| `--finance-approved`     | «Подтверждено»                 |
+| `--border-subtle`        | Границы карточек               |
+
+### Радиусы
+
+| Токен             | Значение | Где применять                    |
+| ----------------- | -------- | -------------------------------- |
+| `--radius-card`   | 16px     | Card, Sheet, Dialog              |
+| `--radius-input`  | 12px     | Input, Select, Button(secondary) |
+| `--radius-button` | 12px     | Button                           |
+| `--radius-pill`   | 9999px   | Badge, Avatar, Dots              |
+
+### Тени
+
+| Токен            | Где                      |
+| ---------------- | ------------------------ |
+| `--shadow-card`  | Card, Sheet              |
+| `--shadow-float` | Bottom-nav, floating CTA |
+
+### Отступы (шкала 4px)
+
+Разрешены только: `0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24` (Tailwind-классы `p-*`, `gap-*`).
+Никаких `p-[13px]`.
+
+---
+
+## 3. Слои и z-index (ключевое — от этого «налезает» меню)
+
+**Все слои зафиксированы. Добавлять новые уровни запрещено.**
+
+| Слой                   | z-index | Кто использует                    |
+| ---------------------- | ------- | --------------------------------- |
+| Контент страницы       | `auto`  | всё, что скроллится               |
+| Sticky header          | `10`    | `<AppShell>` header               |
+| Bottom navigation      | `20`    | `<Navigation>`                    |
+| Floating action button | `30`    | если есть                         |
+| Sheet / Dialog overlay | `40`    | `components/ui/sheet.tsx`, dialog |
+| Sheet / Dialog content | `50`    | `components/ui/sheet.tsx`         |
+| Toast                  | `60`    | уведомления                       |
+
+### Правила для Bottom Navigation
+
+- **Высота:** `calc(56px + env(safe-area-inset-bottom))`.
+- **Всегда** `position: fixed; bottom: 0; left: 0; right: 0`.
+- **Всегда** `padding-bottom: env(safe-area-inset-bottom)`.
+- **Всегда** имеет `background: var(--app-bg)` и `box-shadow: var(--shadow-float)`.
+- **Контент страницы обязан компенсировать высоту**:
+  ```tsx
+  <main className="pb-[calc(56px+env(safe-area-inset-bottom))]">…</main>
+  ```
+
+## 8. AppShell — единственный каркас
+
+- `AppShell` — единственное место, где задаётся `px-4`, `pt-2`, `pb-[calc(56px+env(safe-area-inset-bottom))]`.
+- Страницы возвращают **только** контент. Никаких `px-*`, `pb-*`, `-mx-*`, `-mt-*` у корневого `<div>` страницы.
+- `header` в AppShell: `sticky top-0 z-10 pt-[calc(env(safe-area-inset-top)+0.5rem)]`.
+- `Navigation`: `fixed bottom-0 left-1/2 -translate-x-1/2 max-w-md z-20 pb-[env(safe-area-inset-bottom)]`, внутри `h-14`.
+- `Sheet` (`z-50`) перекрывает nav — это ок. Но `SheetFooter` ОБЯЗАН иметь `pb-[env(safe-area-inset-bottom)]`.
+- Если sheet открывается `side="bottom"` и должен быть НАД nav — `className="bottom-14"`.
+- Онбординг и экраны без меню рендерятся **вне** AppShell.
 
 # Концепция приложения
 
@@ -8179,11 +8266,11 @@ export function AuthButtons() {
 
 ## Три вкладки ребёнка
 
-| Вкладка | Вопрос ребёнка | Содержимое |
-|---|---|---|
-| **Задания** | «Что мне сделать?» | Сетка «задание × 7 дней», отметка кликом по ячейке, деньги по каждому клику сразу. Без CTA «отметить сегодня/всё». |
-| **Кошелёк** | «Сколько у меня денег?» | Всего накоплено, эта неделя (заработано / ждёт проверки / можно ещё), история выплат со статусом. |
-| **Профиль** | «Кто я?» | Имя, возраст, семья, успехи (всего выполнено, лучшая неделя). Без технотекста и «обновить сессию». |
+| Вкладка     | Вопрос ребёнка          | Содержимое                                                                                                         |
+| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Задания** | «Что мне сделать?»      | Сетка «задание × 7 дней», отметка кликом по ячейке, деньги по каждому клику сразу. Без CTA «отметить сегодня/всё». |
+| **Кошелёк** | «Сколько у меня денег?» | Всего накоплено, эта неделя (заработано / ждёт проверки / можно ещё), история выплат со статусом.                  |
+| **Профиль** | «Кто я?»                | Имя, возраст, семья, успехи (всего выполнено, лучшая неделя). Без технотекста и «обновить сессию».                 |
 
 ## Что запрещено
 
@@ -8271,7 +8358,7 @@ export default function ChildBalancePage() {
   )
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <h1 className="text-xl font-bold tracking-tight text-text-main">Кошелёк</h1>
 
@@ -9316,7 +9403,7 @@ export default function ChildTasksPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight text-text-main">Мои задания</h1>
@@ -9500,7 +9587,7 @@ export default function ParentReportsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-text-main">Недельные отчеты</h1>
       </div>
@@ -11159,211 +11246,6 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         return obj.changed_by.avatar_url or None
 </file>
 
-<file path="backend/motivation/services/task_logs.py">
-# backend/motivation/services/task_logs.py
-from decimal import Decimal
-import logging
-
-from django.contrib.auth.models import AnonymousUser
-from django.db import transaction
-from django.utils import timezone
-from django.core.exceptions import PermissionDenied, ValidationError
-
-from motivation.models import FamilyMembership, TaskLog, TaskLogHistory, User, WeeklyReport
-from motivation.services.push import send_push_to_user
-
-logger = logging.getLogger(__name__)
-
-def _week_start(d):
-    return d - timezone.timedelta(days=d.weekday())
-
-
-def _parents_of_child(child: User):
-    """Все родители, состоящие в тех же семьях, что и ребёнок."""
-    family_ids = FamilyMembership.objects.filter(user=child).values_list(
-        "family_id", flat=True
-    )
-    return User.objects.filter(
-        role=User.Role.PARENT,
-        family_memberships__family_id__in=family_ids,
-    ).distinct()
-
-
-def _notify_parents_about_submission(log: TaskLog) -> None:
-    """Push родителям, когда ребёнок отметил задание (DONE_BY_CHILD).
-
-    Не бросает исключений: push не должен ломать основной флоу.
-    """
-    child = log.task.child
-    child_name = child.first_name or child.username or "Ребёнок"
-    title = "Задание на проверку"
-    body = f"{child_name} отметил «{log.task.title}»."
-
-    for parent in _parents_of_child(child):
-        try:
-            send_push_to_user(parent, title, body, url="/parent/review")
-        except Exception:
-            logger.exception("push to parent %s failed", parent.pk)
-
-
-def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
-    """Проверяет права пользователя на смену статуса лога."""
-    if not (user and user.is_authenticated):
-        return
-
-    is_child = getattr(user, "role", None) == User.Role.CHILD
-    is_parent = getattr(user, "role", None) == User.Role.PARENT
-
-    if is_child and log.task.child.pk != user.id:
-        raise PermissionDenied("Ребёнок не может изменять чужие задания.")
-    if is_child and new_status in (
-        TaskLog.Status.APPROVED,
-        TaskLog.Status.REJECTED,
-    ):
-        raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
-    if not is_child and not is_parent:
-        raise PermissionDenied("Роль не задана.")
-
-
-def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
-    """Записывает историю, обновляет поля лога, пересчитывает earnings."""
-    from django.contrib.auth.models import (
-        AnonymousUser,
-    )  # локально, чтобы не тянуть в модуль
-
-    old_status = log.status
-
-    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
-    changed_by_user = None if is_anon else user
-    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
-
-    TaskLogHistory.objects.create(
-        log=log,
-        old_status=old_status,
-        new_status=new_status,
-        changed_by=changed_by_user,
-    )
-
-    log.status = new_status
-    log.updated_by = changed_by_user
-    log.updated_by_parent = is_parent_user
-
-    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
-
-    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
-        log.earned_amount = Decimal("0.00")
-        update_fields.append("earned_amount")
-
-    log.save(update_fields=update_fields)
-
-    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
-    if log.task.pk:
-        start_date = log.date - timezone.timedelta(days=log.date.weekday())
-        end_date = start_date + timezone.timedelta(days=6)
-        recalculate_task_logs_earnings(log.task, start_date, end_date)
-
-
-def is_week_closed(task, log_date) -> bool:
-    """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
-    start = _week_start(log_date)
-    return WeeklyReport.objects.filter(
-        child_id=task.child_id,
-        start_date=start,
-        status=WeeklyReport.Status.CLOSED,
-    ).exists()
-
-
-def assert_week_open(task, log_date):
-    """Бросает ValidationError, если неделя закрыта."""
-
-    if is_week_closed(task, log_date):
-        raise ValidationError(
-            "Неделя закрыта. Изменять выполнения за закрытую неделю нельзя."
-        )
-
-
-def recalculate_task_logs_earnings(task, week_start, week_end):
-    """
-    Пересчитывает earned_amount для логов конкретного задания за неделю
-    в строгом хронологическом порядке с распределением остатка копеек.
-
-    Вызывается из change_task_log_status после изменения статуса лога.
-    Не вызывается из TaskLog.save() — это исключает рекурсию.
-    """
-    logs = list(
-        task.logs.filter(
-            date__range=[week_start, week_end],
-            status__in=[TaskLog.Status.APPROVED, TaskLog.Status.DONE_BY_CHILD],
-        ).order_by("date", "id")
-    )
-
-    if task.schedule_type == task.ScheduleType.FLEXIBLE:
-        runs = task.target_count or 1
-    else:
-        runs = len(task.target_days or [])
-
-    if runs <= 0:
-        return
-
-    total_cents = int(task.weekly_price * 100)
-    base_cents, remainder = divmod(total_cents, runs)
-
-    to_update = []
-    for index, log in enumerate(logs):
-        if index < runs:
-            cents = base_cents + (1 if index < remainder else 0)
-            new_earned = Decimal(cents) / Decimal("100")
-        else:
-            new_earned = Decimal("0.00")
-
-        if log.earned_amount != new_earned:
-            log.earned_amount = new_earned
-            to_update.append(log)
-
-    if to_update:
-        TaskLog.objects.bulk_update(to_update, ["earned_amount"])
-
-
-def assert_not_future(log_date):
-    if log_date > timezone.localdate():
-        raise ValidationError("Нельзя отмечать будущие дни.")
-
-
-@transaction.atomic
-def change_task_log_status(log_id, new_status, user):
-    """
-    Безопасно изменяет статус выполнения задания.
-
-    Пересчёт earned_amount за неделю выполняется здесь,
-    ровно один раз на изменение статуса.
-    """
-    log = TaskLog.objects.select_for_update().get(id=log_id)
-
-    _check_status_change_permission(log, new_status, user)
-
-    if new_status not in TaskLog.Status.values:
-        raise ValueError("Недопустимый статус выполнения.")
-
-    if log.status == new_status:
-        return log
-
-    assert_not_future(log.date)
-    assert_week_open(log.task, log.date)
-
-    old_status = log.status
-
-    _apply_status_change(log, new_status, user)
-
-    # Push родителям: только при переходе в DONE_BY_CHILD.
-    if (
-        old_status != TaskLog.Status.DONE_BY_CHILD
-        and new_status == TaskLog.Status.DONE_BY_CHILD
-    ):
-        _notify_parents_about_submission(log)
-
-    return log
-</file>
-
 <file path="frontend/src/components/Navigation.tsx">
 "use client"
 
@@ -11409,46 +11291,52 @@ export function Navigation() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-app-surface bg-app-card/90 backdrop-blur-lg">
-      <nav className="relative mx-auto flex max-w-md items-center justify-around px-2 py-2">
-        {isSyncing && (
-          <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
-            <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
-            Сохранение...
-          </div>
-        )}
-        {lastError && (
-          <button
-            onClick={clearError}
-            className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
-          >
-            {lastError}
-          </button>
-        )}
-
-        {currentNav.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-1 text-[11px] font-medium transition-all",
-                isActive ? "text-text-main font-semibold" : "text-text-muted hover:text-text-main",
-              )}
+      <nav className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-app-bg pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-float)]">
+        <div className="flex h-14 items-center justify-around px-4">
+          {isSyncing && (
+            <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
+              <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
+              Сохранение...
+            </div>
+          )}
+          {lastError && (
+            <button
+              onClick={clearError}
+              className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
             >
-              <div
+              {lastError}
+            </button>
+          )}
+
+          {currentNav.map((item) => {
+            const Icon = item.icon
+            const isActive = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-2xl transition-all",
-                  isActive ? "bg-brand-action text-brand-action-text shadow-md" : "bg-transparent",
+                  "flex flex-col items-center gap-1 text-[11px] font-medium transition-all",
+                  isActive
+                    ? "text-text-main font-semibold"
+                    : "text-text-muted hover:text-text-main",
                 )}
               >
-                <Icon className="h-5 w-5" />
-              </div>
-              <span>{item.label}</span>
-            </Link>
-          )
-        })}
+                <div
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-2xl transition-all",
+                    isActive
+                      ? "bg-brand-action text-brand-action-text shadow-md"
+                      : "bg-transparent",
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
       </nav>
     </div>
   )
@@ -11628,7 +11516,7 @@ export default function Home() {
 
   if (phase === "no-auth") {
     return (
-      <div className="-mx-4 -mt-6 flex flex-col pb-8">
+      <div className="flex flex-col pb-8">
         <div className="relative w-full">
           <div className="relative w-full overflow-hidden" style={{ aspectRatio: "3 / 4" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -11709,6 +11597,348 @@ export default function Home() {
 
   return null
 }
+</file>
+
+<file path="backend/motivation/services/task_logs.py">
+# backend/motivation/services/task_logs.py
+from datetime import timedelta
+from decimal import Decimal
+import logging
+
+from django.contrib.auth.models import AnonymousUser
+from django.db import transaction
+from django.utils import timezone
+from django.core.exceptions import PermissionDenied, ValidationError
+
+from motivation.models import (
+    FamilyMembership,
+    TaskLog,
+    TaskLogHistory,
+    User,
+    WeeklyReport,
+)
+from motivation.services.push import send_push_to_user
+
+logger = logging.getLogger(__name__)
+
+
+def _week_start(d):
+    return d - timedelta(days=d.weekday())
+
+
+def _parents_of_child(child: User):
+    """Все родители, состоящие в тех же семьях, что и ребёнок."""
+    family_ids = FamilyMembership.objects.filter(user=child).values_list(
+        "family_id", flat=True
+    )
+    return User.objects.filter(
+        role=User.Role.PARENT,
+        family_memberships__family_id__in=family_ids,
+    ).distinct()
+
+
+def _notify_parents_about_submission(log: TaskLog) -> None:
+    """Push родителям, когда ребёнок отметил задание (DONE_BY_CHILD).
+
+    Не бросает исключений: push не должен ломать основной флоу.
+    """
+    child = log.task.child
+    child_name = child.first_name or child.username or "Ребёнок"
+    title = "Задание на проверку"
+    body = f"{child_name} отметил «{log.task.title}»."
+
+    parents = list(_parents_of_child(child))
+    logger.info(
+        "Notifying %d parent(s) about submission log_id=%s task_id=%s child_id=%s",
+        len(parents),
+        log.pk,
+        log.task.pk,
+        child.pk,
+    )
+
+    for parent in parents:
+        try:
+            send_push_to_user(parent, title, body, url="/parent/review")
+        except Exception:
+            logger.exception(
+                "Push to parent %s failed for log_id=%s", parent.pk, log.pk
+            )
+
+
+def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
+    """Проверяет права пользователя на смену статуса лога."""
+    if not (user and user.is_authenticated):
+        logger.debug("Permission check skipped for anonymous user, log_id=%s", log.pk)
+        return
+
+    is_child = getattr(user, "role", None) == User.Role.CHILD
+    is_parent = getattr(user, "role", None) == User.Role.PARENT
+
+    if is_child and log.task.child.pk != user.id:
+        logger.warning(
+            "Child user_id=%s attempted to modify foreign log_id=%s (owner child_id=%s)",
+            user.id,
+            log.pk,
+            log.task.child.pk,
+        )
+        raise PermissionDenied("Ребёнок не может изменять чужие задания.")
+
+    if is_child and new_status in (
+        TaskLog.Status.APPROVED,
+        TaskLog.Status.REJECTED,
+    ):
+        logger.warning(
+            "Child user_id=%s attempted to set forbidden status=%s on log_id=%s",
+            user.id,
+            new_status,
+            log.pk,
+        )
+        raise PermissionDenied("Ребёнок не может подтверждать/отклонять.")
+
+    if not is_child and not is_parent:
+        logger.warning(
+            "User_id=%s with unknown role attempted status change on log_id=%s",
+            user.id,
+            log.pk,
+        )
+        raise PermissionDenied("Роль не задана.")
+
+
+def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
+    """Записывает историю, обновляет поля лога, пересчитывает earnings."""
+    old_status = log.status
+
+    is_anon = isinstance(user, AnonymousUser) or not user or not user.is_authenticated
+    changed_by_user = None if is_anon else user
+    is_parent_user = True if is_anon else getattr(user, "role", None) == "PARENT"
+
+    TaskLogHistory.objects.create(
+        log=log,
+        old_status=old_status,
+        new_status=new_status,
+        changed_by=changed_by_user,
+    )
+    logger.info(
+        "TaskLogHistory created: log_id=%s old_status=%s new_status=%s changed_by=%s",
+        log.pk,
+        old_status,
+        new_status,
+        getattr(changed_by_user, "pk", None),
+    )
+
+    log.status = new_status
+    log.updated_by = changed_by_user
+    log.updated_by_parent = is_parent_user
+
+    update_fields = ["status", "updated_by", "updated_by_parent", "updated_at"]
+
+    if new_status in (TaskLog.Status.CANCELLED, TaskLog.Status.REJECTED):
+        log.earned_amount = Decimal("0.00")
+        update_fields.append("earned_amount")
+        logger.debug(
+            "Resetting earned_amount to 0 for log_id=%s (status=%s)",
+            log.pk,
+            new_status,
+        )
+
+    log.save(update_fields=update_fields)
+
+    # Пересчёт копеек для недели этого лога (для FLEXIBLE и FIXED).
+    if log.task.pk:
+        start_date = log.date - timedelta(days=log.date.weekday())
+        end_date = start_date + timedelta(days=6)
+        logger.debug(
+            "Recalculating earnings for task_id=%s week %s..%s (triggered by log_id=%s)",
+            log.task.pk,
+            start_date,
+            end_date,
+            log.pk,
+        )
+        recalculate_task_logs_earnings(log.task, start_date, end_date)
+
+
+def is_week_closed(task, log_date) -> bool:
+    """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
+    start = _week_start(log_date)
+    closed = WeeklyReport.objects.filter(
+        child_id=task.child.id,
+        start_date=start,
+        status=WeeklyReport.Status.CLOSED,
+    ).exists()
+    if closed:
+        logger.debug(
+            "Week %s is closed for child_id=%s (checked via task_id=%s)",
+            start,
+            task.child.id,
+            task.pk,
+        )
+    return closed
+
+
+def assert_week_open(task, log_date):
+    """Бросает ValidationError, если неделя закрыта."""
+
+    if is_week_closed(task, log_date):
+        logger.warning(
+            "Attempt to modify log for closed week: task_id=%s child_id=%s log_date=%s",
+            task.pk,
+            task.child.id,
+            log_date,
+        )
+        raise ValidationError(
+            "Неделя закрыта. Изменять выполнения за закрытую неделю нельзя."
+        )
+
+
+def recalculate_task_logs_earnings(task, week_start, week_end):
+    """
+    Пересчитывает earned_amount для логов конкретного задания за неделю
+    в строгом хронологическом порядке с распределением остатка копеек.
+
+    Вызывается из change_task_log_status после изменения статуса лога.
+    Не вызывается из TaskLog.save() — это исключает рекурсию.
+    """
+    logs = list(
+        task.logs.filter(
+            date__range=[week_start, week_end],
+            status__in=[TaskLog.Status.APPROVED, TaskLog.Status.DONE_BY_CHILD],
+        ).order_by("date", "id")
+    )
+
+    if task.schedule_type == task.ScheduleType.FLEXIBLE:
+        runs = task.target_count or 1
+    else:
+        runs = len(task.target_days or [])
+
+    if runs <= 0:
+        logger.warning(
+            "Skipping earnings recalculation: task_id=%s has runs<=0 "
+            "(schedule_type=%s, target_count=%s, target_days=%s)",
+            task.pk,
+            task.schedule_type,
+            task.target_count,
+            task.target_days,
+        )
+        return
+
+    total_cents = int(task.weekly_price * 100)
+    base_cents, remainder = divmod(total_cents, runs)
+
+    logger.debug(
+        "Recalculating earnings: task_id=%s week=%s..%s logs=%d runs=%d "
+        "total_cents=%d base_cents=%d remainder=%d",
+        task.pk,
+        week_start,
+        week_end,
+        len(logs),
+        runs,
+        total_cents,
+        base_cents,
+        remainder,
+    )
+
+    to_update = []
+    for index, log in enumerate(logs):
+        if index < runs:
+            cents = base_cents + (1 if index < remainder else 0)
+            new_earned = Decimal(cents) / Decimal("100")
+        else:
+            new_earned = Decimal("0.00")
+
+        if log.earned_amount != new_earned:
+            logger.debug(
+                "log_id=%s earned_amount %s -> %s",
+                log.pk,
+                log.earned_amount,
+                new_earned,
+            )
+            log.earned_amount = new_earned
+            to_update.append(log)
+
+    if to_update:
+        TaskLog.objects.bulk_update(to_update, ["earned_amount"])
+        logger.info(
+            "Updated earned_amount for %d log(s) of task_id=%s week=%s..%s",
+            len(to_update),
+            task.pk,
+            week_start,
+            week_end,
+        )
+    else:
+        logger.debug(
+            "No earned_amount changes for task_id=%s week=%s..%s",
+            task.pk,
+            week_start,
+            week_end,
+        )
+
+
+def assert_not_future(log_date):
+    if log_date > timezone.localdate():
+        logger.warning("Attempt to mark future date: log_date=%s", log_date)
+        raise ValidationError("Нельзя отмечать будущие дни.")
+
+
+@transaction.atomic
+def change_task_log_status(log_id, new_status, user):
+    """
+    Безопасно изменяет статус выполнения задания.
+
+    Пересчёт earned_amount за неделю выполняется здесь,
+    ровно один раз на изменение статуса.
+    """
+    logger.info(
+        "change_task_log_status called: log_id=%s new_status=%s user_id=%s",
+        log_id,
+        new_status,
+        getattr(user, "pk", None),
+    )
+
+    try:
+        log = TaskLog.objects.select_for_update().get(id=log_id)
+    except TaskLog.DoesNotExist:
+        logger.error("TaskLog not found: log_id=%s", log_id)
+        raise
+
+    _check_status_change_permission(log, new_status, user)
+
+    if new_status not in TaskLog.Status.values:
+        logger.error(
+            "Invalid status requested: log_id=%s new_status=%s", log_id, new_status
+        )
+        raise ValueError("Недопустимый статус выполнения.")
+
+    if log.status == new_status:
+        logger.info(
+            "No-op status change: log_id=%s already has status=%s",
+            log_id,
+            new_status,
+        )
+        return log
+
+    assert_not_future(log.date)
+    assert_week_open(log.task, log.date)
+
+    old_status = log.status
+
+    _apply_status_change(log, new_status, user)
+
+    # Push родителям: только при переходе в DONE_BY_CHILD.
+    if (
+        old_status != TaskLog.Status.DONE_BY_CHILD
+        and new_status == TaskLog.Status.DONE_BY_CHILD
+    ):
+        _notify_parents_about_submission(log)
+
+    logger.info(
+        "TaskLog status changed successfully: log_id=%s %s -> %s by user_id=%s",
+        log.pk,
+        old_status,
+        new_status,
+        getattr(user, "pk", None),
+    )
+
+    return log
 </file>
 
 <file path="frontend/src/app/child/profile/page.tsx">
@@ -11955,7 +12185,7 @@ export default function ParentReviewPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-text-main">Проверка заданий</h1>
       </div>
@@ -12866,212 +13096,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
       </head>
       <body
-        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main pb-20`}
+        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main`}
       >
         <AppShell>{children}</AppShell>
       </body>
     </html>
   )
-}
-</file>
-
-<file path="backend/config/settings.py">
-"""
-Django settings for config project.
-
-Generated by 'django-admin startproject' using Django 6.1.1.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.1/topics/settings/
-
-For the full list of settings and their values, see
-https://docs.djangoproject.com/en/6.1/ref/settings/
-"""
-
-import os
-from pathlib import Path
-import dj_database_url
-from datetime import timedelta
-from dotenv import load_dotenv
-from corsheaders.defaults import default_headers
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
-BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
-VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
-VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
-VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "")
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-e)-%y+@s1y2^#g_5i!b&j9h_^g4k3i+!up4p$#!n(#z=wv$k9a"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
-
-ALLOWED_HOSTS = ["*"]
-
-
-# Application definition
-
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "corsheaders",
-    "rest_framework",
-    "motivation",
-]
-
-MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
-    "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-]
-
-ROOT_URLCONF = "config.urls"
-
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
-        },
-    },
-]
-
-WSGI_APPLICATION = "config.wsgi.application"
-
-
-# Database
-# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
-
-DATABASES = {
-    "default": {
-        **dj_database_url.config(
-            default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-            conn_max_age=0,
-            conn_health_checks=True,
-        ),
-        "DISABLE_SERVER_SIDE_CURSORS": True,
-    }
-}
-
-
-# Password validation
-# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
-
-
-# Internationalization
-# https://docs.djangoproject.com/en/6.1/topics/i18n/
-
-LANGUAGE_CODE = "en-us"
-
-TIME_ZONE = "Europe/Moscow"  # было "UTC"
-USE_TZ = True
-
-USE_I18N = True
-
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.1/howto/static-files/
-
-STATIC_URL = "static/"
-
-
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
-
-MAILERS = {
-    "default": {
-        "BACKEND": "django.core.mail.backends.console.EmailBackend",
-    },
-}
-
-
-AUTH_USER_MODEL = "motivation.User"
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "motivation.authentication.TelegramInitDataAuthentication",
-        "motivation.authentication.BFFServiceAuthentication",  # ← добавили
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-}
-
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-}
-
-CORS_ALLOW_ALL_ORIGINS = True
-
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    "x-parent-telegram-id",
-    "x-child-telegram-id",
-]
-
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{levelname} {asctime} {name} {process:d} {thread:d} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
-    },
-    "root": {"handlers": ["console"], "level": "INFO"},
-    "loggers": {
-        "django.request": {"level": "WARNING", "propagate": True},
-        "motivation": {"level": "DEBUG" if DEBUG else "INFO", "propagate": True},
-    },
 }
 </file>
 
@@ -13355,6 +13385,206 @@ export interface OnboardingSlidesProps {
 export interface OnboardingDotsProps {
   total: number
   active: number
+}
+</file>
+
+<file path="backend/config/settings.py">
+"""
+Django settings for config project.
+
+Generated by 'django-admin startproject' using Django 6.1.1.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.1/topics/settings/
+
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/6.1/ref/settings/
+"""
+
+import os
+from pathlib import Path
+import dj_database_url
+from datetime import timedelta
+from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
+BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "")
+
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = "django-insecure-e)-%y+@s1y2^#g_5i!b&j9h_^g4k3i+!up4p$#!n(#z=wv$k9a"
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = False
+
+ALLOWED_HOSTS = ["*"]
+
+
+# Application definition
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "corsheaders",
+    "rest_framework",
+    "motivation",
+]
+
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "config.wsgi.application"
+
+
+# Database
+# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+
+DATABASES = {
+    "default": {
+        **dj_database_url.config(
+            default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+            conn_max_age=0,
+            conn_health_checks=True,
+        ),
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+    }
+}
+
+
+# Password validation
+# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
+
+
+# Internationalization
+# https://docs.djangoproject.com/en/6.1/topics/i18n/
+
+LANGUAGE_CODE = "en-us"
+
+TIME_ZONE = "Europe/Moscow"  # было "UTC"
+USE_TZ = True
+
+USE_I18N = True
+
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/6.1/howto/static-files/
+
+STATIC_URL = "static/"
+
+
+# Email
+# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+
+MAILERS = {
+    "default": {
+        "BACKEND": "django.core.mail.backends.console.EmailBackend",
+    },
+}
+
+
+AUTH_USER_MODEL = "motivation.User"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "motivation.authentication.TelegramInitDataAuthentication",
+        "motivation.authentication.BFFServiceAuthentication",  # ← добавили
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-parent-telegram-id",
+    "x-child-telegram-id",
+]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {name} {process:d} {thread:d} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django.request": {"level": "WARNING", "propagate": True},
+        "motivation": {"level": "DEBUG" if DEBUG else "INFO", "propagate": True},
+    },
 }
 </file>
 

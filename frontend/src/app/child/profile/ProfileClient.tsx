@@ -143,7 +143,7 @@ export function ProfileClient() {
   const profileIncomplete = !me?.birth_date || !me?.gender
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-text-main">Профиль</h1>
         {!isEditing && (
