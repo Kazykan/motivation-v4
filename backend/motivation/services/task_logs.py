@@ -50,7 +50,7 @@ def _notify_parents_about_submission(log: TaskLog) -> None:
         "Notifying %d parent(s) about submission log_id=%s task_id=%s child_id=%s",
         len(parents),
         log.pk,
-        log.task.id,
+        log.task.pk,
         child.pk,
     )
 
@@ -147,7 +147,7 @@ def _apply_status_change(log: TaskLog, new_status: str, user) -> None:
         end_date = start_date + timedelta(days=6)
         logger.debug(
             "Recalculating earnings for task_id=%s week %s..%s (triggered by log_id=%s)",
-            log.task.id,
+            log.task.pk,
             start_date,
             end_date,
             log.pk,
@@ -159,7 +159,7 @@ def is_week_closed(task, log_date) -> bool:
     """True, если за неделю, содержащую log_date, для ребёнка есть закрытый отчёт."""
     start = _week_start(log_date)
     closed = WeeklyReport.objects.filter(
-        child_id=task.child_id,
+        child_id=task.child.id,
         start_date=start,
         status=WeeklyReport.Status.CLOSED,
     ).exists()
@@ -167,7 +167,7 @@ def is_week_closed(task, log_date) -> bool:
         logger.debug(
             "Week %s is closed for child_id=%s (checked via task_id=%s)",
             start,
-            task.child_id,
+            task.child.id,
             task.pk,
         )
     return closed
@@ -180,7 +180,7 @@ def assert_week_open(task, log_date):
         logger.warning(
             "Attempt to modify log for closed week: task_id=%s child_id=%s log_date=%s",
             task.pk,
-            task.child_id,
+            task.child.id,
             log_date,
         )
         raise ValidationError(
