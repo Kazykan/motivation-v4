@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Bell, Share, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { api } from "@/lib/axios"
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -24,7 +25,6 @@ export function PushNotificationSettings() {
   >("loading")
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [busy, setBusy] = useState(false)
-
   const [sending, setSending] = useState(false)
   const [testMsg, setTestMsg] = useState<string | null>(null)
 
@@ -33,7 +33,7 @@ export function PushNotificationSettings() {
     setTestMsg(null)
     try {
       await api.post("/push/test")
-      setTestMsg("Уведомление отправлено")
+      setTestMsg("Тестовое уведомление отправлено")
     } catch (e: any) {
       setTestMsg(e.response?.data?.error || "Не удалось отправить")
     } finally {
@@ -79,12 +79,12 @@ export function PushNotificationSettings() {
   const handleToggle = async (checked: boolean) => {
     if (busy) return
     setBusy(true)
+    setTestMsg(null)
 
     try {
       const reg = await navigator.serviceWorker.ready
 
       if (checked) {
-        // Подписка
         const permission = await Notification.requestPermission()
         if (permission !== "granted") {
           setStatus(permission === "denied" ? "denied" : "ready")
@@ -107,7 +107,6 @@ export function PushNotificationSettings() {
 
         setIsSubscribed(true)
       } else {
-        // Отписка
         const sub = await reg.pushManager.getSubscription()
         if (sub) {
           await api.post("/push/unsubscribe", { endpoint: sub.endpoint })
@@ -125,14 +124,14 @@ export function PushNotificationSettings() {
   if (status === "loading" || status === "unsupported") return null
 
   return (
-    <Card className="border-app-surface bg-app-card">
+    <Card id="notifications" className="rounded-card border-app-surface bg-app-card shadow-sm">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold text-text-main">
           <Bell className="h-4 w-4 text-text-muted" />
           Уведомления
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="flex flex-col gap-3 pt-0">
         {status === "ios-browser" && (
           <div className="flex items-start gap-2 rounded-xl bg-app-surface p-3 text-xs text-text-muted">
             <Share className="mt-0.5 h-4 w-4 shrink-0 text-text-main" />
@@ -151,26 +150,36 @@ export function PushNotificationSettings() {
         )}
 
         {status === "ready" && (
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium text-text-main">Push-уведомления</span>
-              <span className="text-xs text-text-muted">
-                Напоминания о заданиях и итогах недели
-              </span>
+          <>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-text-main">Push-уведомления</span>
+                <span className="text-xs text-text-muted">
+                  Напоминания о проверке заданий и итогах недели
+                </span>
+              </div>
+              <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
             </div>
-            <Switch checked={isSubscribed} onCheckedChange={handleToggle} disabled={busy} />
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 h-8 gap-1.5"
-              disabled={!isSubscribed || sending}
-              onClick={handleTest}
-            >
-              <Send className="h-3.5 w-3.5" />
-              {sending ? "Отправка…" : "Отправить тест"}
-            </Button>
-            {testMsg && <p className="mt-2 text-[11px] text-text-muted">{testMsg}</p>}
-          </div>
+
+            {isSubscribed && (
+              <>
+                <Separator />
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-9 w-full justify-center gap-2 rounded-button bg-app-surface text-text-main hover:bg-app-bg"
+                    disabled={sending}
+                    onClick={handleTest}
+                  >
+                    <Send className="h-3.5 w-3.5 text-text-muted" />
+                    {sending ? "Отправка…" : "Проверить уведомление"}
+                  </Button>
+                  {testMsg && <p className="text-center text-xs text-text-muted">{testMsg}</p>}
+                </div>
+              </>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

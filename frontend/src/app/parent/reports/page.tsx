@@ -4,15 +4,12 @@ import { useMemo, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { parentApi } from "@/services/parentApi"
 import { useChildren } from "@/hooks/useChildren"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, AlertCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { WeekNavigator } from "@/components/WeekNavigator"
 import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
 import type { WeeklyReportDraft } from "@/types/props"
 import { useRequireRole } from "@/hooks/useRequireRole"
+import { WeeklyReportCard, type WeeklyReportItem } from "@/components/parent/WeeklyReportCard"
 
 export default function ParentReportsPage() {
   const router = useRouter()
@@ -21,6 +18,7 @@ export default function ParentReportsPage() {
 
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null)
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(new Date()))
+  const [closingKey, setClosingKey] = useState<string | null>(null)
 
   const weekStartIso = toISODate(weekStart)
   const weekEndIso = toISODate(getWeekEnd(weekStart))
@@ -44,6 +42,9 @@ export default function ParentReportsPage() {
       queryClient.invalidateQueries({ queryKey: ["weekly-reports"] })
       queryClient.invalidateQueries({ queryKey: ["weekly-review"] })
     },
+    onSettled: () => {
+      setClosingKey(null)
+    },
   })
 
   const loading = childrenLoading || reportsLoading
@@ -58,12 +59,14 @@ export default function ParentReportsPage() {
     if (!nextDisabled) setWeekStart((d) => addWeeks(d, 1))
   }
 
-  const handleCloseWeek = (report: WeeklyReportDraft) => {
+  const handleCloseWeek = (report: WeeklyReportItem) => {
     if (!report.can_close) return
+    setClosingKey(`${report.child}-${report.start_date}`)
     closeWeekMutation.mutate({
       child_id: report.child,
       week_start: report.start_date,
       is_payout_confirmed: true,
+      manual_adjustment: Number(report.manual_adjustment) || 0,
     })
   }
 
@@ -128,88 +131,22 @@ export default function ParentReportsPage() {
         <div className="flex flex-col gap-4">
           {reports.map((report) => {
             const childInfo = children.find((c: any) => c.id === report.child)
-            const isClosed = report.is_payout_confirmed || report.status === "CLOSED"
-            const canClose = report.can_close && !isClosed
+            const childName =
+              [childInfo?.first_name, childInfo?.last_name].filter(Boolean).join(" ") ||
+              childInfo?.name ||
+              "Ребенок"
+            const key = `${report.child}-${report.start_date}`
 
             return (
-              <Card
-                key={`${report.child}-${report.start_date}`}
-                className="border-app-surface bg-app-card shadow-sm"
-              >
-                <CardHeader className="border-b border-app-surface pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary-soft font-bold text-finance-pending">
-                        {(childInfo?.first_name || childInfo?.name || "Р")?.[0]}
-                      </div>
-                      <div className="flex flex-col">
-                        <CardTitle className="text-sm font-semibold text-text-main">
-                          {childInfo?.first_name || childInfo?.name || "Ребенок"}
-                        </CardTitle>
-                        <span className="text-xs text-text-muted">
-                          Период: {report.start_date} – {report.end_date}
-                        </span>
-                      </div>
-                    </div>
-                    <Badge
-                      className={
-                        isClosed
-                          ? "bg-finance-positive/10 text-finance-positive"
-                          : "bg-finance-pending/10 text-finance-pending"
-                      }
-                    >
-                      {isClosed ? "Выплачено" : "Ждет проверки"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-4 pt-4">
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="flex flex-col">
-                      <span className="text-text-muted">Заработано</span>
-                      <span className="font-bold text-text-main">{report.calculated_amount} ₽</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-text-muted">Корректировка</span>
-                      <span className="font-bold text-finance-positive">
-                        +{report.manual_adjustment} ₽
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-text-muted">Итого к выплате</span>
-                      <span className="font-extrabold text-text-main">{report.final_sum} ₽</span>
-                    </div>
-                  </div>
-
-                  {!isClosed && (
-                    <div className="flex flex-col gap-2 pt-2">
-                      <Button
-                        variant="outline"
-                        className="w-full cursor-pointer border-finance-pending/40 bg-finance-pending/5 text-finance-pending hover:bg-finance-pending/10"
-                        onClick={() => goToReview(report.child, report.start_date)}
-                      >
-                        <AlertCircle className="mr-2 h-4 w-4" />
-                        Есть задания на проверку — перейти в «Проверка»
-                      </Button>
-
-                      <Button
-                        className="w-full cursor-pointer bg-brand-primary font-semibold text-brand-dark hover:bg-brand-primary-hover"
-                        onClick={() => handleCloseWeek(report)}
-                        disabled={!canClose || closeWeekMutation.isPending}
-                        title={
-                          canClose
-                            ? "Закрыть неделю и отметить выплату"
-                            : "Неделю можно закрыть только после воскресенья"
-                        }
-                      >
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        {canClose
-                          ? "Закрыть неделю и отметить выплату"
-                          : "Закрытие недоступно до окончания недели"}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <WeeklyReportCard
+                key={key}
+                report={report as WeeklyReportItem}
+                childName={childName}
+                childAvatar={childInfo?.avatar_url}
+                onCloseWeek={handleCloseWeek}
+                onReview={goToReview}
+                isClosing={closingKey === key && closeWeekMutation.isPending}
+              />
             )
           })}
         </div>

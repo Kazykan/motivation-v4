@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import { ChildCardProps } from "@/types/props"
 
 function calcAge(birthDate?: string | null): number | null {
@@ -21,25 +20,26 @@ export function ChildCard({ child, action }: ChildCardProps) {
     [child.first_name, child.last_name].filter(Boolean).join(" ") || child.name || "Ребёнок"
 
   return (
-    <Card className="rounded-2xl border-app-surface bg-app-card shadow-xs transition-all hover:shadow-md">
-      <CardContent className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-3.5">
-          <Avatar className="h-12 w-12">
+    <Card className="rounded-card border-app-surface bg-app-card py-0 shadow-xs">
+      <CardContent className="flex items-center justify-between gap-3 p-3.5">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className="h-11 w-11 shrink-0">
             <AvatarImage src={child.avatar_url ?? undefined} />
-            <AvatarFallback className="bg-brand-action/15 text-brand-action-hover text-sm">
-              {(fullName || "?").slice(0, 1)}
+            <AvatarFallback className="bg-brand-primary-soft text-sm font-semibold text-brand-warning-strong">
+              {(fullName || "?").slice(0, 1).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-bold text-text-main">{fullName}</span>
-            <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-sm font-bold text-text-main">{fullName}</span>
+            <div className="flex items-center gap-1.5 text-xs text-text-muted">
               {age !== null && <span>{age} лет</span>}
               {age !== null && genderLabel && <span>•</span>}
               {genderLabel && <span>{genderLabel}</span>}
+              {age === null && !genderLabel && <span>Профиль не заполнен</span>}
             </div>
           </div>
         </div>
-        {action}
+        {action && <div className="shrink-0">{action}</div>}
       </CardContent>
     </Card>
   )
