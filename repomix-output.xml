@@ -404,111 +404,6 @@ class Migration(migrations.Migration):
 
 </file>
 
-<file path="backend/motivation/services/push.py">
-from datetime import date, timedelta
-import json
-import logging
-from pywebpush import webpush, WebPushException
-from django.conf import settings
-from motivation.models import PushSubscription, User, Task, TaskLog, WeeklyReport
-
-logger = logging.getLogger(__name__)
-
-def send_weekly_report_reminders() -> int:
-    """Напоминание родителям закрыть неделю (по воскресеньям)."""
-    today = date.today()
-    week_start = today - timedelta(days=today.weekday())
-    sent = 0
-    parents = User.objects.filter(role=User.Role.PARENT)
-    for parent in parents.iterator():
-        # есть ли у родителя хотя бы один ребёнок с незакрытой неделей
-        has_open = (
-            WeeklyReport.objects.filter(
-                child__family_memberships__family__family_memberships__user=parent,
-                start_date=week_start,
-            )
-            .exclude(status=WeeklyReport.Status.CLOSED)
-            .exists()
-        )
-        if not has_open:
-            continue
-        sent += send_push_to_user(
-            parent,
-            "Итоги недели",
-            "Пора проверить задания ребёнка и закрыть неделю.",
-            url="/parent/reports",
-        )
-    return sent
-
-
-def send_daily_task_reminders() -> int:
-    """Ежедневное напоминание ребёнку о незакрытых заданиях (вечер)."""
-    today = date.today()
-    weekday = today.isoweekday()  # 1..7
-    sent = 0
-    tasks = Task.objects.filter(is_active=True).select_related("child")
-    for task in tasks.iterator():
-        if task.schedule_type == Task.ScheduleType.WEEKLY_DAYS:
-            if weekday not in (task.target_days or []):
-                continue
-        already = (
-            TaskLog.objects.filter(
-                task=task, date=today, status=TaskLog.Status.DONE_BY_CHILD
-            ).exists()
-            or TaskLog.objects.filter(
-                task=task, date=today, status=TaskLog.Status.APPROVED
-            ).exists()
-        )
-        if already:
-            continue
-        sent += send_push_to_user(
-            task.child,
-            "Не забудь про задание",
-            f"«{task.title}» ещё не отмечено сегодня.",
-            url="/child/tasks",
-        )
-    return sent
-
-
-def send_push_to_user(user, title, body, url="/") -> int:
-    private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
-    subject = getattr(settings, "VAPID_SUBJECT", None)
-
-    if not private_key or not subject:
-        logger.error(
-            "VAPID не настроен: private_key=%s subject=%s",
-            bool(private_key), bool(subject),
-        )
-        return 0
-
-    # На всякий случай гарантируем mailto:
-    if not subject.startswith("mailto:") and not subject.startswith("https://"):
-        subject = f"mailto:{subject}"
-
-    sent = 0
-    for sub in PushSubscription.objects.filter(user=user):
-        payload = json.dumps({"title": title, "body": body, "url": url})
-        try:
-            webpush(
-                subscription_info={
-                    "endpoint": sub.endpoint,
-                    "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
-                },
-                data=payload,
-                vapid_private_key=private_key,
-                vapid_claims={"sub": subject},
-            )
-            sent += 1
-        except WebPushException as e:
-            status = e.response.status_code if e.response is not None else None
-            logger.warning("webpush failed endpoint=%s status=%s err=%s", sub.endpoint[:40], status, e)
-            if status == 410:
-                sub.delete()
-        except Exception:
-            logger.exception("Неожиданная ошибка webpush endpoint=%s", sub.endpoint[:40])
-    return sent
-</file>
-
 <file path="backend/motivation/views/cron.py">
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -3292,246 +3187,6 @@ __all__ = [
 ]
 </file>
 
-<file path="backend/motivation/views/push.py">
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-
-from motivation.services.push import send_push_to_user
-from motivation.models import PushSubscription
-from .permissions import ServiceOrUserPermission, _is_authenticated
-
-
-class PushSubscribeView(APIView):
-    permission_classes = [ServiceOrUserPermission]
-
-    def post(self, request):
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется вход."}, status=401)
-
-        endpoint = request.data.get("endpoint")
-        p256dh = request.data.get("p256dh")
-        auth = request.data.get("auth")
-
-        if not endpoint or not p256dh or not auth:
-            return Response(
-                {"detail": "endpoint, p256dh и auth обязательны."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        sub, _ = PushSubscription.objects.update_or_create(
-            endpoint=endpoint,
-            defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
-        )
-        return Response({"id": sub.id}, status=status.HTTP_200_OK)
-
-
-class PushUnsubscribeView(APIView):
-    permission_classes = [ServiceOrUserPermission]
-
-    def post(self, request):
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется вход."}, status=401)
-
-        endpoint = request.data.get("endpoint")
-        if not endpoint:
-            return Response(
-                {"detail": "endpoint обязателен."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
-        return Response({"ok": True}, status=status.HTTP_200_OK)
-
-
-class PushTestView(APIView):
-    permission_classes = [ServiceOrUserPermission]
-
-    def post(self, request):
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется вход."}, status=401)
-
-        if not PushSubscription.objects.filter(user=request.user).exists():
-            return Response(
-                {"detail": "Нет активных подписок. Включите уведомления."},
-                status=400,
-            )
-
-        sent = send_push_to_user(
-            request.user,
-            "Проверка уведомлений",
-            "Push-уведомления работают 🎉",
-            url="/",
-        )
-        if sent == 0:
-            return Response(
-                {
-                    "detail": "Не удалось отправить. Проверьте настройки VAPID на сервере."
-                },
-                status=502,
-            )
-        return Response({"ok": True, "sent": sent})
-</file>
-
-<file path="backend/motivation/views/task_logs.py">
-# backend/motivation/views/task_logs.py
-import logging
-from decimal import Decimal
-from typing import cast
-
-from django.db.models import QuerySet
-from django.core.exceptions import (
-    PermissionDenied,
-    ValidationError as DjangoValidationError,
-)
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError as DRFValidationError
-from rest_framework.request import Request as DRFRequest
-from rest_framework.response import Response
-
-from motivation.models import TaskLog, FamilyMembership
-from motivation.serializers import TaskLogSerializer, TaskLogHistorySerializer
-from motivation.services.task_logs import (
-    assert_not_future,
-    change_task_log_status,
-    assert_week_open,
-)
-from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
-from .family import _family_child_ids
-
-
-class TaskLogViewSet(viewsets.ModelViewSet):
-    queryset = TaskLog.objects.all()
-    serializer_class = TaskLogSerializer
-    permission_classes = [ServiceOrUserPermission]
-
-    def get_queryset(self):
-        request = self.request
-
-        if _is_bff(request) or not _is_authenticated(request):
-            return TaskLog.objects.all()
-
-        user = request.user
-
-        if getattr(user, "is_parent", False):
-            child_ids = _family_child_ids(user)
-            return TaskLog.objects.filter(task__child_id__in=child_ids)
-
-        if getattr(user, "is_child", False):
-            return TaskLog.objects.filter(task__child=user)
-
-        return TaskLog.objects.none()
-
-    @action(detail=True, methods=["get"], url_path="history")
-    def history(self, request, pk=None):
-        task_log = self.get_object()
-        history_records = task_log.history.all()
-        serializer = TaskLogHistorySerializer(history_records, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    def perform_create(self, serializer):
-        request = cast(DRFRequest, self.request)
-        task = serializer.validated_data["task"]
-        log_date = serializer.validated_data["date"]
-
-        if log_date is None:
-            raise DRFValidationError({"date": "Поле date обязательно."})
-        user = self.request.user
-
-        # Авторизация по роли:
-        if _is_authenticated(self.request):
-            if getattr(user, "is_child", False):
-                if task.child != user:
-                    raise PermissionDenied("Нельзя отмечать чужие задания.")
-            elif getattr(user, "is_parent", False):
-                if not FamilyMembership.objects.filter(
-                    user=user, family__memberships__user=task.child
-                ).exists():
-                    raise PermissionDenied("Ребёнок не из вашей семьи.")
-            else:
-                raise PermissionDenied("Роль не задана.")
-
-        try:
-            assert_not_future(log_date)
-            assert_week_open(task, log_date)
-        except DjangoValidationError as e:
-            raise DRFValidationError({"detail": e.messages[0]})
-
-        initial_status = request.data.get("status", TaskLog.Status.PENDING)
-        serializer.validated_data["status"] = TaskLog.Status.PENDING
-        log = serializer.save(earned_amount=Decimal("0.00"))
-
-        if initial_status != TaskLog.Status.PENDING:
-            change_task_log_status(log.id, initial_status, user)
-
-    def perform_update(self, serializer):
-
-        logger = logging.getLogger("motivation.auth")
-        logger.debug(
-            "PATCH task-log id=%s raw_status=%r current=%r payload=%r",
-            serializer.instance.id,
-            self.request.data.get("status"),
-            serializer.instance.status,
-            serializer.validated_data,
-        )
-
-        user = self.request.user
-        instance = serializer.instance
-
-        # status объявлен read_only в TaskLogSerializer,
-        # поэтому берём его из сырого тела запроса.
-        new_status = self.request.data.get("status")
-
-        if new_status and new_status != instance.status:
-            change_task_log_status(instance.id, new_status, user)
-            instance.refresh_from_db()
-
-        if serializer.validated_data:
-            serializer.save()
-
-    @action(detail=False, methods=["post"], url_path="bulk-approve")
-    def bulk_approve(self, request):
-        if _is_authenticated(request):
-            if not getattr(request.user, "is_parent", False):
-                return Response(
-                    {"detail": "Только родитель может массово подтверждать задания."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-        log_ids = request.data.get("log_ids", [])
-        if not isinstance(log_ids, list) or not log_ids:
-            return Response(
-                {"detail": "Необходимо передать список ID логов (log_ids)."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        qs = TaskLog.objects.filter(id__in=log_ids, status=TaskLog.Status.DONE_BY_CHILD)
-        if _is_authenticated(request) and getattr(request.user, "is_parent", False):
-            child_ids = _family_child_ids(request.user)
-            qs = qs.filter(task__child_id__in=child_ids)
-
-        logs = list(qs)
-        approved_ids = []
-        skipped_closed = []
-
-        for log in logs:
-            try:
-                change_task_log_status(log.id, TaskLog.Status.APPROVED, request.user)
-                approved_ids.append(log.id)
-            except DjangoValidationError:
-                skipped_closed.append(log.id)
-
-        return Response(
-            {
-                "detail": f"Успешно подтверждено логов: {len(approved_ids)}.",
-                "approved_ids": approved_ids,
-                "skipped_closed": skipped_closed,
-            },
-            status=status.HTTP_200_OK,
-        )
-</file>
-
 <file path="frontend/next.config.ts">
 import type { NextConfig } from "next"
 
@@ -6162,6 +5817,111 @@ class Migration(migrations.Migration):
     ]
 </file>
 
+<file path="backend/motivation/services/push.py">
+from datetime import date, timedelta
+import json
+import logging
+from pywebpush import webpush, WebPushException
+from django.conf import settings
+from motivation.models import PushSubscription, User, Task, TaskLog, WeeklyReport
+
+logger = logging.getLogger(__name__)
+
+def send_weekly_report_reminders() -> int:
+    """Напоминание родителям закрыть неделю (по воскресеньям)."""
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    sent = 0
+    parents = User.objects.filter(role=User.Role.PARENT)
+    for parent in parents.iterator():
+        # есть ли у родителя хотя бы один ребёнок с незакрытой неделей
+        has_open = (
+            WeeklyReport.objects.filter(
+                child__family_memberships__family__family_memberships__user=parent,
+                start_date=week_start,
+            )
+            .exclude(status=WeeklyReport.Status.CLOSED)
+            .exists()
+        )
+        if not has_open:
+            continue
+        sent += send_push_to_user(
+            parent,
+            "Итоги недели",
+            "Пора проверить задания ребёнка и закрыть неделю.",
+            url="/parent/reports",
+        )
+    return sent
+
+
+def send_daily_task_reminders() -> int:
+    """Ежедневное напоминание ребёнку о незакрытых заданиях (вечер)."""
+    today = date.today()
+    weekday = today.isoweekday()  # 1..7
+    sent = 0
+    tasks = Task.objects.filter(is_active=True).select_related("child")
+    for task in tasks.iterator():
+        if task.schedule_type == Task.ScheduleType.WEEKLY_DAYS:
+            if weekday not in (task.target_days or []):
+                continue
+        already = (
+            TaskLog.objects.filter(
+                task=task, date=today, status=TaskLog.Status.DONE_BY_CHILD
+            ).exists()
+            or TaskLog.objects.filter(
+                task=task, date=today, status=TaskLog.Status.APPROVED
+            ).exists()
+        )
+        if already:
+            continue
+        sent += send_push_to_user(
+            task.child,
+            "Не забудь про задание",
+            f"«{task.title}» ещё не отмечено сегодня.",
+            url="/child/tasks",
+        )
+    return sent
+
+
+def send_push_to_user(user, title, body, url="/") -> int:
+    private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
+    subject = getattr(settings, "VAPID_ADMIN_EMAIL", None)
+
+    if not private_key or not subject:
+        logger.error(
+            "VAPID не настроен: private_key=%s subject=%s",
+            bool(private_key), bool(subject),
+        )
+        return 0
+
+    # На всякий случай гарантируем mailto:
+    if not subject.startswith("mailto:") and not subject.startswith("https://"):
+        subject = f"mailto:{subject}"
+
+    sent = 0
+    for sub in PushSubscription.objects.filter(user=user):
+        payload = json.dumps({"title": title, "body": body, "url": url})
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": sub.endpoint,
+                    "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                },
+                data=payload,
+                vapid_private_key=private_key,
+                vapid_claims={"sub": subject},
+            )
+            sent += 1
+        except WebPushException as e:
+            status = e.response.status_code if e.response is not None else None
+            logger.warning("webpush failed endpoint=%s status=%s err=%s", sub.endpoint[:40], status, e)
+            if status == 410:
+                sub.delete()
+        except Exception:
+            logger.exception("Неожиданная ошибка webpush endpoint=%s", sub.endpoint[:40])
+    return sent
+</file>
+
 <file path="backend/motivation/views/auth.py">
 # backend/motivation/views/auth.py
 from django.db import transaction
@@ -6363,65 +6123,244 @@ class JoinByCodeView(APIView):
         return Response(_user_payload(user), status=status.HTTP_200_OK)
 </file>
 
-<file path="backend/motivation/views/users.py">
-from django.db.models import QuerySet
-from rest_framework import viewsets
-
-from motivation.models import User, FamilyMembership
+<file path="backend/motivation/views/push.py">
+from rest_framework import status
 from rest_framework.response import Response
-from motivation.serializers import UserSerializer
+from rest_framework.views import APIView
+
+from motivation.services.push import send_push_to_user
+from motivation.models import PushSubscription
+from .permissions import ServiceOrUserPermission, _is_authenticated
+
+
+class PushSubscribeView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        endpoint = request.data.get("endpoint")
+        p256dh = request.data.get("p256dh")
+        auth = request.data.get("auth")
+
+        if not endpoint or not p256dh or not auth:
+            return Response(
+                {"detail": "endpoint, p256dh и auth обязательны."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sub, _ = PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
+        )
+        return Response({"id": sub.pk}, status=status.HTTP_200_OK)
+
+
+class PushUnsubscribeView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        endpoint = request.data.get("endpoint")
+        if not endpoint:
+            return Response(
+                {"detail": "endpoint обязателен."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        PushSubscription.objects.filter(endpoint=endpoint, user=request.user).delete()
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class PushTestView(APIView):
+    permission_classes = [ServiceOrUserPermission]
+
+    def post(self, request):
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется вход."}, status=401)
+
+        if not PushSubscription.objects.filter(user=request.user).exists():
+            return Response(
+                {"detail": "Нет активных подписок. Включите уведомления."},
+                status=400,
+            )
+
+        sent = send_push_to_user(
+            request.user,
+            "Проверка уведомлений",
+            "Push-уведомления работают 🎉",
+            url="/",
+        )
+        if sent == 0:
+            return Response(
+                {
+                    "detail": "Не удалось отправить. Проверьте настройки VAPID на сервере."
+                },
+                status=502,
+            )
+        return Response({"ok": True, "sent": sent})
+</file>
+
+<file path="backend/motivation/views/task_logs.py">
+# backend/motivation/views/task_logs.py
+import logging
+from decimal import Decimal
+from typing import cast
+
+from django.db.models import QuerySet
+from django.core.exceptions import (
+    PermissionDenied,
+    ValidationError as DjangoValidationError,
+)
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.request import Request as DRFRequest
+from rest_framework.response import Response
+
+from motivation.models import TaskLog, FamilyMembership
+from motivation.serializers import TaskLogSerializer, TaskLogHistorySerializer
+from motivation.services.task_logs import (
+    assert_not_future,
+    change_task_log_status,
+    assert_week_open,
+)
 from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
 from .family import _family_child_ids
 
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
+class TaskLogViewSet(viewsets.ModelViewSet):
+    queryset = TaskLog.objects.all()
+    serializer_class = TaskLogSerializer
     permission_classes = [ServiceOrUserPermission]
-    serializer_class = UserSerializer
 
-    def get_queryset(self) -> QuerySet:
+    def get_queryset(self):
         request = self.request
-        queryset = User.objects.all()
 
         if _is_bff(request) or not _is_authenticated(request):
-            is_child_param = request.query_params.get("is_child")
-            if is_child_param is not None:
-                is_child = is_child_param.lower() in ("true", "1")
-                role_val = User.Role.CHILD if is_child else User.Role.PARENT
-                queryset = queryset.filter(role=role_val)
-            return queryset
+            return TaskLog.objects.all()
 
         user = request.user
 
-        if getattr(user, "role", None) == User.Role.CHILD:
-            return queryset.filter(id=user.pk)
-
-        if getattr(user, "role", None) == User.Role.PARENT:
+        if getattr(user, "is_parent", False):
             child_ids = _family_child_ids(user)
-            return queryset.filter(id__in=child_ids)
+            return TaskLog.objects.filter(task__child_id__in=child_ids)
 
-        return queryset.none()
+        if getattr(user, "is_child", False):
+            return TaskLog.objects.filter(task__child=user)
 
-    @action(detail=False, methods=["get"], url_path="family-members")
-    def family_members(self, request):
-        """
-        Возвращает всех членов семьи текущего пользователя:
-        и родителей, и детей.
-        """
-        # Исправление: убрали проверку _is_bff(request), чтобы запросы через BFF с авторизованным пользователем не блокировались
-        if not _is_authenticated(request):
-            return Response({"detail": "Требуется аутентификация."}, status=403)
+        return TaskLog.objects.none()
 
-        user = request.user
-        family_ids = FamilyMembership.objects.filter(user=user).values_list(
-            "family_id", flat=True
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        task_log = self.get_object()
+        history_records = task_log.history.all()
+        serializer = TaskLogHistorySerializer(history_records, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def perform_create(self, serializer):
+        request = cast(DRFRequest, self.request)
+        task = serializer.validated_data["task"]
+        log_date = serializer.validated_data["date"]
+
+        if log_date is None:
+            raise DRFValidationError({"date": "Поле date обязательно."})
+        user = self.request.user
+
+        # Авторизация по роли:
+        if _is_authenticated(self.request):
+            if getattr(user, "is_child", False):
+                if task.child != user:
+                    raise PermissionDenied("Нельзя отмечать чужие задания.")
+            elif getattr(user, "is_parent", False):
+                if not FamilyMembership.objects.filter(
+                    user=user, family__memberships__user=task.child
+                ).exists():
+                    raise PermissionDenied("Ребёнок не из вашей семьи.")
+            else:
+                raise PermissionDenied("Роль не задана.")
+
+        try:
+            assert_not_future(log_date)
+            assert_week_open(task, log_date)
+        except DjangoValidationError as e:
+            raise DRFValidationError({"detail": e.messages[0]})
+
+        initial_status = request.data.get("status", TaskLog.Status.PENDING)
+        serializer.validated_data["status"] = TaskLog.Status.PENDING
+        log = serializer.save(earned_amount=Decimal("0.00"))
+
+        if initial_status != TaskLog.Status.PENDING:
+            change_task_log_status(log.id, initial_status, user)
+
+    def perform_update(self, serializer):
+
+        logger = logging.getLogger("motivation.auth")
+        logger.debug(
+            "PATCH task-log id=%s raw_status=%r current=%r payload=%r",
+            serializer.instance.id,
+            self.request.data.get("status"),
+            serializer.instance.status,
+            serializer.validated_data,
         )
-        user_ids = FamilyMembership.objects.filter(
-            family_id__in=family_ids
-        ).values_list("user_id", flat=True)
 
-        members = User.objects.filter(id__in=user_ids).distinct()
-        return Response(UserSerializer(members, many=True).data)
+        user = self.request.user
+        instance = serializer.instance
+
+        # status объявлен read_only в TaskLogSerializer,
+        # поэтому берём его из сырого тела запроса.
+        new_status = self.request.data.get("status")
+
+        if new_status and new_status != instance.status:
+            change_task_log_status(instance.id, new_status, user)
+            instance.refresh_from_db()
+
+        if serializer.validated_data:
+            serializer.save()
+
+    @action(detail=False, methods=["post"], url_path="bulk-approve")
+    def bulk_approve(self, request):
+        if _is_authenticated(request):
+            if not getattr(request.user, "is_parent", False):
+                return Response(
+                    {"detail": "Только родитель может массово подтверждать задания."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        log_ids = request.data.get("log_ids", [])
+        if not isinstance(log_ids, list) or not log_ids:
+            return Response(
+                {"detail": "Необходимо передать список ID логов (log_ids)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qs = TaskLog.objects.filter(id__in=log_ids, status=TaskLog.Status.DONE_BY_CHILD)
+        if _is_authenticated(request) and getattr(request.user, "is_parent", False):
+            child_ids = _family_child_ids(request.user)
+            qs = qs.filter(task__child_id__in=child_ids)
+
+        logs = list(qs)
+        approved_ids = []
+        skipped_closed = []
+
+        for log in logs:
+            try:
+                change_task_log_status(log.pk, TaskLog.Status.APPROVED, request.user)
+                approved_ids.append(log.pk)
+            except DjangoValidationError:
+                skipped_closed.append(log.pk)
+
+        return Response(
+            {
+                "detail": f"Успешно подтверждено логов: {len(approved_ids)}.",
+                "approved_ids": approved_ids,
+                "skipped_closed": skipped_closed,
+            },
+            status=status.HTTP_200_OK,
+        )
 </file>
 
 <file path="frontend/eslint.config.mjs">
@@ -7966,6 +7905,65 @@ urlpatterns = [
     path("push/unsubscribe/", PushUnsubscribeView.as_view(), name="push-unsubscribe"),
     path("push/test/", PushTestView.as_view(), name="push-test"),
 ]
+</file>
+
+<file path="backend/motivation/views/users.py">
+from typing import Any, cast
+from django.db.models import QuerySet
+from rest_framework import viewsets
+from rest_framework.request import Request as DRFRequest
+
+from motivation.models import User, FamilyMembership
+from rest_framework.response import Response
+from motivation.serializers import UserSerializer
+from rest_framework.decorators import action
+from .permissions import ServiceOrUserPermission, _is_bff, _is_authenticated
+from .family import _family_child_ids
+
+
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [ServiceOrUserPermission]
+    serializer_class = UserSerializer
+
+    def get_queryset(self) -> Any:
+        request = cast(DRFRequest, self.request)
+        queryset = User.objects.all()
+
+        if _is_bff(request) or not _is_authenticated(request):
+            is_child_param = request.query_params.get("is_child")
+            if is_child_param is not None:
+                is_child = is_child_param.lower() in ("true", "1")
+                role_val = User.Role.CHILD if is_child else User.Role.PARENT
+                queryset = queryset.filter(role=role_val)
+            return queryset
+
+        user = request.user
+
+        if getattr(user, "role", None) == User.Role.CHILD:
+            return queryset.filter(id=user.pk)
+
+        if getattr(user, "role", None) == User.Role.PARENT:
+            child_ids = _family_child_ids(user)
+            return queryset.filter(id__in=child_ids)
+
+        return queryset.none()
+
+    @action(detail=False, methods=["get"], url_path="family-members")
+    def family_members(self, request):
+        request = cast(DRFRequest, request)
+        if not _is_authenticated(request):
+            return Response({"detail": "Требуется аутентификация."}, status=403)
+
+        user = request.user
+        family_ids = FamilyMembership.objects.filter(user=user).values_list(
+            "family_id", flat=True
+        )
+        user_ids = FamilyMembership.objects.filter(
+            family_id__in=family_ids
+        ).values_list("user_id", flat=True)
+
+        members = User.objects.filter(id__in=user_ids).distinct()
+        return Response(UserSerializer(members, many=True).data)
 </file>
 
 <file path="frontend/package.json">
@@ -11164,14 +11162,17 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
 <file path="backend/motivation/services/task_logs.py">
 # backend/motivation/services/task_logs.py
 from decimal import Decimal
+import logging
 
 from django.contrib.auth.models import AnonymousUser
 from django.db import transaction
 from django.utils import timezone
 from django.core.exceptions import PermissionDenied, ValidationError
 
-from motivation.models import TaskLog, TaskLogHistory, User, WeeklyReport
+from motivation.models import FamilyMembership, TaskLog, TaskLogHistory, User, WeeklyReport
+from motivation.services.push import send_push_to_user
 
+logger = logging.getLogger(__name__)
 
 def _week_start(d):
     return d - timezone.timedelta(days=d.weekday())
@@ -11202,7 +11203,7 @@ def _notify_parents_about_submission(log: TaskLog) -> None:
         try:
             send_push_to_user(parent, title, body, url="/parent/review")
         except Exception:
-            logger.exception("push to parent %s failed", parent.id)
+            logger.exception("push to parent %s failed", parent.pk)
 
 
 def _check_status_change_permission(log: TaskLog, new_status: str, user) -> None:
@@ -12134,194 +12135,6 @@ export const parentApi = {
 }
 </file>
 
-<file path="backend/config/settings.py">
-"""
-Django settings for config project.
-
-Generated by 'django-admin startproject' using Django 6.1.1.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.1/topics/settings/
-
-For the full list of settings and their values, see
-https://docs.djangoproject.com/en/6.1/ref/settings/
-"""
-
-import os
-from pathlib import Path
-import dj_database_url
-from datetime import timedelta
-from dotenv import load_dotenv
-from corsheaders.defaults import default_headers
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
-BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
-VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
-VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
-VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "")
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-e)-%y+@s1y2^#g_5i!b&j9h_^g4k3i+!up4p$#!n(#z=wv$k9a"
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
-
-ALLOWED_HOSTS = ["*"]
-
-
-# Application definition
-
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "corsheaders",
-    "rest_framework",
-    "motivation",
-]
-
-MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
-    "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-]
-
-ROOT_URLCONF = "config.urls"
-
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
-        },
-    },
-]
-
-WSGI_APPLICATION = "config.wsgi.application"
-
-
-# Database
-# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
-
-DATABASES = {
-    "default": {
-        **dj_database_url.config(
-            default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-            conn_max_age=0,
-            conn_health_checks=True,
-        ),
-        "DISABLE_SERVER_SIDE_CURSORS": True,
-    }
-}
-
-
-# Password validation
-# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
-
-
-# Internationalization
-# https://docs.djangoproject.com/en/6.1/topics/i18n/
-
-LANGUAGE_CODE = "en-us"
-
-TIME_ZONE = "Europe/Moscow"  # было "UTC"
-USE_TZ = True
-
-USE_I18N = True
-
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/6.1/howto/static-files/
-
-STATIC_URL = "static/"
-
-
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
-
-MAILERS = {
-    "default": {
-        "BACKEND": "django.core.mail.backends.console.EmailBackend",
-    },
-}
-
-
-AUTH_USER_MODEL = "motivation.User"
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "motivation.authentication.TelegramInitDataAuthentication",
-        "motivation.authentication.BFFServiceAuthentication",  # ← добавили
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-}
-
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
-    "AUTH_HEADER_TYPES": ("Bearer",),
-}
-
-CORS_ALLOW_ALL_ORIGINS = True
-
-CORS_ALLOW_HEADERS = list(default_headers) + [
-    "x-parent-telegram-id",
-    "x-child-telegram-id",
-]
-
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "loggers": {"motivation.auth": {"handlers": ["console"], "level": "DEBUG"}},
-}
-</file>
-
 <file path="backend/motivation/models.py">
 import secrets
 from datetime import datetime, timedelta
@@ -13059,6 +12872,206 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </body>
     </html>
   )
+}
+</file>
+
+<file path="backend/config/settings.py">
+"""
+Django settings for config project.
+
+Generated by 'django-admin startproject' using Django 6.1.1.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.1/topics/settings/
+
+For the full list of settings and their values, see
+https://docs.djangoproject.com/en/6.1/ref/settings/
+"""
+
+import os
+from pathlib import Path
+import dj_database_url
+from datetime import timedelta
+from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
+BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "")
+
+# Quick-start development settings - unsuitable for production
+# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = "django-insecure-e)-%y+@s1y2^#g_5i!b&j9h_^g4k3i+!up4p$#!n(#z=wv$k9a"
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = False
+
+ALLOWED_HOSTS = ["*"]
+
+
+# Application definition
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "corsheaders",
+    "rest_framework",
+    "motivation",
+]
+
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "config.wsgi.application"
+
+
+# Database
+# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+
+DATABASES = {
+    "default": {
+        **dj_database_url.config(
+            default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+            conn_max_age=0,
+            conn_health_checks=True,
+        ),
+        "DISABLE_SERVER_SIDE_CURSORS": True,
+    }
+}
+
+
+# Password validation
+# https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
+
+
+# Internationalization
+# https://docs.djangoproject.com/en/6.1/topics/i18n/
+
+LANGUAGE_CODE = "en-us"
+
+TIME_ZONE = "Europe/Moscow"  # было "UTC"
+USE_TZ = True
+
+USE_I18N = True
+
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/6.1/howto/static-files/
+
+STATIC_URL = "static/"
+
+
+# Email
+# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+
+MAILERS = {
+    "default": {
+        "BACKEND": "django.core.mail.backends.console.EmailBackend",
+    },
+}
+
+
+AUTH_USER_MODEL = "motivation.User"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "motivation.authentication.TelegramInitDataAuthentication",
+        "motivation.authentication.BFFServiceAuthentication",  # ← добавили
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-parent-telegram-id",
+    "x-child-telegram-id",
+]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {name} {process:d} {thread:d} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django.request": {"level": "WARNING", "propagate": True},
+        "motivation": {"level": "DEBUG" if DEBUG else "INFO", "propagate": True},
+    },
 }
 </file>
 

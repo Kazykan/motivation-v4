@@ -180,6 +180,18 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "loggers": {"motivation.auth": {"handlers": ["console"], "level": "DEBUG"}},
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {name} {process:d} {thread:d} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "verbose"},
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {
+        "django.request": {"level": "WARNING", "propagate": True},
+        "motivation": {"level": "DEBUG" if DEBUG else "INFO", "propagate": True},
+    },
 }
