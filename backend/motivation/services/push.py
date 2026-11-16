@@ -1,9 +1,11 @@
 from datetime import date, timedelta
 import json
+import logging
 from pywebpush import webpush, WebPushException
 from django.conf import settings
 from motivation.models import PushSubscription, User, Task, TaskLog, WeeklyReport
 
+logger = logging.getLogger(__name__)
 
 def send_weekly_report_reminders() -> int:
     """Напоминание родителям закрыть неделю (по воскресеньям)."""
@@ -62,27 +64,39 @@ def send_daily_task_reminders() -> int:
 
 
 def send_push_to_user(user, title, body, url="/") -> int:
+    private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
+    subject = getattr(settings, "VAPID_SUBJECT", None)
+
+    if not private_key or not subject:
+        logger.error(
+            "VAPID не настроен: private_key=%s subject=%s",
+            bool(private_key), bool(subject),
+        )
+        return 0
+
+    # На всякий случай гарантируем mailto:
+    if not subject.startswith("mailto:") and not subject.startswith("https://"):
+        subject = f"mailto:{subject}"
+
     sent = 0
     for sub in PushSubscription.objects.filter(user=user):
         payload = json.dumps({"title": title, "body": body, "url": url})
-        subscription_info = {
-            "endpoint": sub.endpoint,
-            "keys": {
-                "p256dh": sub.p256dh,
-                "auth": sub.auth,
-            },
-        }
         try:
             webpush(
-                subscription_info=subscription_info,
-                data=payload,
-                vapid_private_key=settings.VAPID_PRIVATE_KEY,
-                vapid_claims={
-                    "sub": getattr(settings, "VAPID_ADMIN_EMAIL", "admin@example.com")
+                subscription_info={
+                    "endpoint": sub.endpoint,
+                    "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
                 },
+                data=payload,
+                vapid_private_key=private_key,
+                vapid_claims={"sub": subject},
             )
             sent += 1
         except WebPushException as e:
-            if e.response is not None and e.response.status_code == 410:
+            status = e.response.status_code if e.response is not None else None
+            logger.warning("webpush failed endpoint=%s status=%s err=%s", sub.endpoint[:40], status, e)
+            if status == 410:
                 sub.delete()
+        except Exception:
+            logger.exception("Неожиданная ошибка webpush endpoint=%s", sub.endpoint[:40])
     return sent

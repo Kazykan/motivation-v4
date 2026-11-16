@@ -141,10 +141,10 @@ class TaskLogViewSet(viewsets.ModelViewSet):
 
         for log in logs:
             try:
-                change_task_log_status(log.id, TaskLog.Status.APPROVED, request.user)
-                approved_ids.append(log.id)
+                change_task_log_status(log.pk, TaskLog.Status.APPROVED, request.user)
+                approved_ids.append(log.pk)
             except DjangoValidationError:
-                skipped_closed.append(log.id)
+                skipped_closed.append(log.pk)
 
         return Response(
             {

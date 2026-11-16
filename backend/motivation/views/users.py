@@ -1,5 +1,7 @@
+from typing import Any, cast
 from django.db.models import QuerySet
 from rest_framework import viewsets
+from rest_framework.request import Request as DRFRequest
 
 from motivation.models import User, FamilyMembership
 from rest_framework.response import Response
@@ -13,8 +15,8 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [ServiceOrUserPermission]
     serializer_class = UserSerializer
 
-    def get_queryset(self) -> QuerySet:
-        request = self.request
+    def get_queryset(self) -> Any:
+        request = cast(DRFRequest, self.request)
         queryset = User.objects.all()
 
         if _is_bff(request) or not _is_authenticated(request):
@@ -38,11 +40,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="family-members")
     def family_members(self, request):
-        """
-        Возвращает всех членов семьи текущего пользователя:
-        и родителей, и детей.
-        """
-        # Исправление: убрали проверку _is_bff(request), чтобы запросы через BFF с авторизованным пользователем не блокировались
+        request = cast(DRFRequest, request)
         if not _is_authenticated(request):
             return Response({"detail": "Требуется аутентификация."}, status=403)
 

@@ -26,7 +26,7 @@ BFF_SERVICE_USERNAME = os.getenv("BFF_SERVICE_USERNAME", "")
 BFF_SERVICE_PASSWORD = os.getenv("BFF_SERVICE_PASSWORD", "")
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
-VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "mailto:admin@example.com")
+VAPID_ADMIN_EMAIL = os.environ.get("VAPID_ADMIN_EMAIL", "")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/

@@ -28,7 +28,7 @@ class PushSubscribeView(APIView):
             endpoint=endpoint,
             defaults={"user": request.user, "p256dh": p256dh, "auth": auth},
         )
-        return Response({"id": sub.id}, status=status.HTTP_200_OK)
+        return Response({"id": sub.pk}, status=status.HTTP_200_OK)
 
 
 class PushUnsubscribeView(APIView):
@@ -56,6 +56,12 @@ class PushTestView(APIView):
         if not _is_authenticated(request):
             return Response({"detail": "Требуется вход."}, status=401)
 
+        if not PushSubscription.objects.filter(user=request.user).exists():
+            return Response(
+                {"detail": "Нет активных подписок. Включите уведомления."},
+                status=400,
+            )
+
         sent = send_push_to_user(
             request.user,
             "Проверка уведомлений",
@@ -64,7 +70,9 @@ class PushTestView(APIView):
         )
         if sent == 0:
             return Response(
-                {"detail": "Нет активных подписок. Включите уведомления."},
-                status=400,
+                {
+                    "detail": "Не удалось отправить. Проверьте настройки VAPID на сервере."
+                },
+                status=502,
             )
         return Response({"ok": True, "sent": sent})
