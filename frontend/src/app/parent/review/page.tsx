@@ -14,6 +14,7 @@ import { getMonday, addWeeks, toISODate, getWeekEnd } from "@/lib/week"
 import { ReviewTaskDetail } from "@/components/parent/ReviewTaskDetail"
 import { DebugJsonPanel } from "@/components/DebugJsonPanel"
 import { DEBUG_JSON } from "@/lib/debug"
+import { Skeleton } from "@/components/ui/skeleton"
 
 function normalizeDays(days?: number[] | string[]): number[] {
   if (!Array.isArray(days)) return []
@@ -253,7 +254,46 @@ export default function ParentReviewPage() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-sm text-text-muted">Загрузка заданий...</div>
+        <div className="flex flex-col gap-4 rounded-card bg-app-card p-4 shadow-xs">
+          {/* Шапка с аватаром и именем */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex flex-col gap-1">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
+            <Skeleton className="h-5 w-12 rounded-full" />
+          </div>
+
+          {/* Блок с ценой */}
+          <div className="flex justify-end">
+            <Skeleton className="h-6 w-16" />
+          </div>
+
+          {/* Название задачи */}
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+
+          {/* Блок расписания */}
+          <div className="rounded-xl bg-app-surface/30 p-4">
+            <div className="mb-4 flex justify-between">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+            <div className="flex justify-between gap-1">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="flex flex-col items-center gap-2">
+                  <Skeleton className="h-3 w-4" />
+                  <Skeleton className="h-9 w-9 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       ) : reviewsData.length === 0 ? (
         <div className="py-12 text-center text-sm text-text-muted">Нет заданий на проверку</div>
       ) : (
