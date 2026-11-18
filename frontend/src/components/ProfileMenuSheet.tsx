@@ -40,7 +40,7 @@ export function ProfileMenuSheet() {
           <button
             type="button"
             aria-label="Открыть меню профиля"
-            className="rounded-full transition active:scale-95"
+            className="ml-1 rounded-full p-1 -m-1 transition active:scale-95"
           >
             <Avatar className="h-8 w-8">
               <AvatarImage src={me.avatar_url ?? ""} alt="" />
