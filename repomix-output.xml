@@ -6155,48 +6155,6 @@ export function ProfileClient() {
 }
 </file>
 
-<file path="frontend/src/components/AppShell.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { Navigation } from "@/components/Navigation"
-import { ProfileMenuSheet } from "./ProfileMenuSheet"
-
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient())
-
-  useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp
-    if (tg) {
-      try {
-        tg.ready()
-        tg.expand()
-      } catch {}
-    }
-  }, [])
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
-        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
-        <header className="sticky top-0 z-10 flex items-center justify-end bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
-          <ProfileMenuSheet />
-        </header>
-
-        {/* Контент — px-4 здесь, один раз */}
-        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(56px+env(safe-area-inset-bottom))]">
-          {children}
-        </main>
-      </div>
-
-      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
-      <Navigation />
-    </QueryClientProvider>
-  )
-}
-</file>
-
 <file path="frontend/src/components/auth/ParentStep.tsx">
 "use client"
 
@@ -7818,6 +7776,55 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     "tailwindcss": "^4",
     "typescript": "^5"
   }
+}
+</file>
+
+<file path="frontend/src/components/AppShell.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Navigation } from "@/components/Navigation"
+import { ProfileMenuSheet } from "./ProfileMenuSheet"
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient())
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp
+    if (tg) {
+      try {
+        tg.ready()
+        tg.expand()
+      } catch {}
+    }
+  }, [])
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
+        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
+        <header className="sticky top-0 z-10 flex items-center justify-end bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
+          <span
+            className="font-brand text-text-main leading-none select-none"
+            style={{ fontSize: "clamp(20px, 5.5vw, 28px)" }}
+            aria-label="Motivation"
+          >
+            Motivation
+          </span>
+          <ProfileMenuSheet />
+        </header>
+
+        {/* Контент — px-4 здесь, один раз */}
+        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(56px+env(safe-area-inset-bottom))]">
+          {children}
+        </main>
+      </div>
+
+      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
+      <Navigation />
+    </QueryClientProvider>
+  )
 }
 </file>
 
@@ -10430,201 +10437,6 @@ export default function ChildTasksPage() {
 }
 </file>
 
-<file path="frontend/src/app/globals.css">
-/* frontend/src/app/globals.css */
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-
-@custom-variant dark (&:is(.dark *));
-
-/* ────────────────────────────────────────────────────────────
- * ТЕМА: маппинг CSS-переменных → Tailwind utility-классы
- * ──────────────────────────────────────────────────────────── */
-@theme inline {
-  --font-display: var(--font-cormorant);
-
-  /* ФОНЫ */
-  --color-app-bg: #e9ecef; /* Фон страницы */
-  --color-app-card: #ffffff; /* Фон карточек */
-  --color-app-surface: #f4f5f7; /* Внутренние блоки (календарь, итоги) */
-
-  /* ТЕКСТ */
-  --color-text-main: #1a1a1a;
-  --color-text-muted: #8e95a3;
-
-  /* АКЦЕНТЫ (Действия) */
-  --color-brand-action: #9aea1c;
-  --color-brand-action-hover: #85d616;
-  --color-brand-action-text: #1a1a1a;
-
-  /* ФИНАНСОВЫЕ СТАТУСЫ */
-  --color-finance-positive: #10b981; /* Заработано */
-  --color-finance-pending: #f59e0b; /* Ждёт */
-  --color-finance-negative: #f43f5e; /* Отклонено */
-
-  --color-brand-success: #10b981;
-  --color-brand-success-soft: #d1fae5;
-  --color-brand-success-strong: #047857;
-  --color-brand-warning: #f59e0b;
-  --color-brand-warning-soft: #fef3c7;
-  --color-brand-warning-strong: #b45309;
-  --color-brand-error: #f43f5e;
-  --color-brand-error-soft: #ffe4e6;
-  --color-brand-error-strong: #be123c;
-  --color-brand-dark: #1a1a1a;
-  --color-brand-muted: #8e95a3;
-  --color-brand-surface-alt: #f4f5f7;
-  --color-brand-primary: #9aea1c;
-  --color-brand-primary-hover: #85d616;
-  --color-brand-primary-soft: #eafbc9;
-
-  /* ДОПОЛНИТЕЛЬНЫЕ АКЦЕНТЫ */
-  --color-accent-blue: #6ed6e8;
-  --color-accent-peach: #f6c1a9;
-
-  /* shadcn-алиасы (для calendar.tsx / popover.tsx / button.tsx) */
-  --color-background: var(--color-app-bg);
-  --color-foreground: var(--color-text-main);
-  --color-card: var(--color-app-card);
-  --color-card-foreground: var(--color-text-main);
-  --color-popover: var(--color-app-card);
-  --color-popover-foreground: var(--color-text-main);
-  --color-primary: var(--color-brand-action);
-  --color-primary-foreground: var(--color-brand-action-text);
-  --color-secondary: var(--color-app-surface);
-  --color-secondary-foreground: var(--color-text-main);
-  --color-muted: var(--color-app-surface);
-  --color-muted-foreground: var(--color-text-muted);
-  --color-accent: var(--color-app-surface);
-  --color-accent-foreground: var(--color-text-main);
-  --color-destructive: var(--color-finance-negative);
-  --color-destructive-foreground: #ffffff;
-  --color-border: var(--color-app-surface);
-  --color-input: var(--color-app-surface);
-  --color-ring: var(--color-brand-action);
-
-  /* Sidebar / charts — оставляем привязку к :root (нужно shadcn) */
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-
-  /* Радиусы бренда */
-  --radius-card: 24px;
-  --radius-button: 16px;
-
-  /* Производные радиусы от базового --radius */
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-/* ────────────────────────────────────────────────────────────
- * СВЕТЛАЯ ТЕМА
- * ──────────────────────────────────────────────────────────── */
-:root {
-  --radius: 16px;
-
-  --shadow-soft: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 0 1px 1px rgba(0, 0, 0, 0.02);
-  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
-
-  /* ── CSS-переменные, используемые через var(...) в инлайн-стилях ── */
-  --color-app-bg: #e9ecef;
-  --color-app-card: #ffffff;
-  --color-app-surface: #f4f5f7;
-  --color-text-main: #1a1a1a;
-  --color-text-muted: #8e95a3;
-  --color-brand-action: #9aea1c;
-  --color-brand-action-hover: #85d616;
-  --color-brand-action-text: #1a1a1a;
-  --color-brand-primary-soft: #eafbc9;
-  --color-brand-warning-strong: #b45309;
-  --color-finance-pending: #f59e0b;
-  --color-brand-error-soft: #ffe4e6;
-  --color-brand-error-strong: #be123c;
-
-  /* ── shadcn-переменные (для совместимости с shadcn-компонентами) ── */
-  --background: var(--color-app-bg);
-  --foreground: var(--color-text-main);
-
-  --card: var(--color-app-card);
-  --card-foreground: var(--color-text-main);
-
-  --popover: var(--color-app-card);
-  --popover-foreground: var(--color-text-main);
-
-  --primary: var(--color-brand-action);
-  --primary-foreground: var(--color-brand-action-text);
-
-  --secondary: var(--color-app-surface);
-  --secondary-foreground: var(--color-text-main);
-
-  --muted: var(--color-app-surface);
-  --muted-foreground: var(--color-text-muted);
-
-  --accent: var(--color-app-surface);
-  --accent-foreground: var(--color-text-main);
-
-  --destructive: var(--color-finance-negative, #f43f5e);
-  --destructive-foreground: #ffffff;
-
-  --border: var(--color-app-surface);
-  --input: var(--color-app-surface);
-  --ring: var(--color-brand-action);
-
-  /* Графики (нейтральные) */
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-
-  /* Sidebar */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-/* ────────────────────────────────────────────────────────────
- * БАЗОВЫЕ СТИЛИ
- * ──────────────────────────────────────────────────────────── */
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
-  }
-}
-</file>
-
 <file path="frontend/src/app/parent/children/page.tsx">
 "use client"
 
@@ -11372,6 +11184,202 @@ class TaskLogHistorySerializer(serializers.ModelSerializer):
         if not obj.changed_by:
             return None
         return obj.changed_by.avatar_url or None
+</file>
+
+<file path="frontend/src/app/globals.css">
+/* frontend/src/app/globals.css */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ────────────────────────────────────────────────────────────
+ * ТЕМА: маппинг CSS-переменных → Tailwind utility-классы
+ * ──────────────────────────────────────────────────────────── */
+@theme inline {
+  --font-brand: var(--font-asimovian);
+  --font-display: var(--font-cormorant);
+
+  /* ФОНЫ */
+  --color-app-bg: #e9ecef; /* Фон страницы */
+  --color-app-card: #ffffff; /* Фон карточек */
+  --color-app-surface: #f4f5f7; /* Внутренние блоки (календарь, итоги) */
+
+  /* ТЕКСТ */
+  --color-text-main: #1a1a1a;
+  --color-text-muted: #8e95a3;
+
+  /* АКЦЕНТЫ (Действия) */
+  --color-brand-action: #9aea1c;
+  --color-brand-action-hover: #85d616;
+  --color-brand-action-text: #1a1a1a;
+
+  /* ФИНАНСОВЫЕ СТАТУСЫ */
+  --color-finance-positive: #10b981; /* Заработано */
+  --color-finance-pending: #f59e0b; /* Ждёт */
+  --color-finance-negative: #f43f5e; /* Отклонено */
+
+  --color-brand-success: #10b981;
+  --color-brand-success-soft: #d1fae5;
+  --color-brand-success-strong: #047857;
+  --color-brand-warning: #f59e0b;
+  --color-brand-warning-soft: #fef3c7;
+  --color-brand-warning-strong: #b45309;
+  --color-brand-error: #f43f5e;
+  --color-brand-error-soft: #ffe4e6;
+  --color-brand-error-strong: #be123c;
+  --color-brand-dark: #1a1a1a;
+  --color-brand-muted: #8e95a3;
+  --color-brand-surface-alt: #f4f5f7;
+  --color-brand-primary: #9aea1c;
+  --color-brand-primary-hover: #85d616;
+  --color-brand-primary-soft: #eafbc9;
+
+  /* ДОПОЛНИТЕЛЬНЫЕ АКЦЕНТЫ */
+  --color-accent-blue: #6ed6e8;
+  --color-accent-peach: #f6c1a9;
+
+  /* shadcn-алиасы (для calendar.tsx / popover.tsx / button.tsx) */
+  --color-background: var(--color-app-bg);
+  --color-foreground: var(--color-text-main);
+  --color-card: var(--color-app-card);
+  --color-card-foreground: var(--color-text-main);
+  --color-popover: var(--color-app-card);
+  --color-popover-foreground: var(--color-text-main);
+  --color-primary: var(--color-brand-action);
+  --color-primary-foreground: var(--color-brand-action-text);
+  --color-secondary: var(--color-app-surface);
+  --color-secondary-foreground: var(--color-text-main);
+  --color-muted: var(--color-app-surface);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-accent: var(--color-app-surface);
+  --color-accent-foreground: var(--color-text-main);
+  --color-destructive: var(--color-finance-negative);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--color-app-surface);
+  --color-input: var(--color-app-surface);
+  --color-ring: var(--color-brand-action);
+
+  /* Sidebar / charts — оставляем привязку к :root (нужно shadcn) */
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+
+  /* Радиусы бренда */
+  --radius-card: 24px;
+  --radius-button: 16px;
+
+  /* Производные радиусы от базового --radius */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ────────────────────────────────────────────────────────────
+ * СВЕТЛАЯ ТЕМА
+ * ──────────────────────────────────────────────────────────── */
+:root {
+  --radius: 16px;
+
+  --shadow-soft: 0 10px 30px -5px rgba(0, 0, 0, 0.05), 0 0 1px 1px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.04);
+
+  /* ── CSS-переменные, используемые через var(...) в инлайн-стилях ── */
+  --color-app-bg: #e9ecef;
+  --color-app-card: #ffffff;
+  --color-app-surface: #f4f5f7;
+  --color-text-main: #1a1a1a;
+  --color-text-muted: #8e95a3;
+  --color-brand-action: #9aea1c;
+  --color-brand-action-hover: #85d616;
+  --color-brand-action-text: #1a1a1a;
+  --color-brand-primary-soft: #eafbc9;
+  --color-brand-warning-strong: #b45309;
+  --color-finance-pending: #f59e0b;
+  --color-brand-error-soft: #ffe4e6;
+  --color-brand-error-strong: #be123c;
+
+  /* ── shadcn-переменные (для совместимости с shadcn-компонентами) ── */
+  --background: var(--color-app-bg);
+  --foreground: var(--color-text-main);
+
+  --card: var(--color-app-card);
+  --card-foreground: var(--color-text-main);
+
+  --popover: var(--color-app-card);
+  --popover-foreground: var(--color-text-main);
+
+  --primary: var(--color-brand-action);
+  --primary-foreground: var(--color-brand-action-text);
+
+  --secondary: var(--color-app-surface);
+  --secondary-foreground: var(--color-text-main);
+
+  --muted: var(--color-app-surface);
+  --muted-foreground: var(--color-text-muted);
+
+  --accent: var(--color-app-surface);
+  --accent-foreground: var(--color-text-main);
+
+  --destructive: var(--color-finance-negative, #f43f5e);
+  --destructive-foreground: #ffffff;
+
+  --border: var(--color-app-surface);
+  --input: var(--color-app-surface);
+  --ring: var(--color-brand-action);
+
+  /* Графики (нейтральные) */
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+
+  /* Sidebar */
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* ────────────────────────────────────────────────────────────
+ * БАЗОВЫЕ СТИЛИ
+ * ──────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
 </file>
 
 <file path="frontend/src/lib/axios.ts">
@@ -13349,48 +13357,6 @@ export default function ParentReviewPage() {
 }
 </file>
 
-<file path="frontend/src/app/layout.tsx">
-// app/layout.tsx
-import type { Metadata } from "next"
-import { Inter, Cormorant_Garamond } from "next/font/google"
-import Script from "next/script"
-import "./globals.css"
-import { AppShell } from "@/components/AppShell"
-
-const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
-const cormorant = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500"],
-  variable: "--font-cormorant",
-  display: "swap",
-})
-
-export const metadata: Metadata = {
-  manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Motivation" },
-  icons: { apple: "/icons/apple-touch-icon.png" },
-}
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html
-      lang="ru"
-      className={`${inter.variable} ${cormorant.variable} h-full antialiased`}
-      suppressHydrationWarning
-    >
-      <head>
-        <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
-      </head>
-      <body
-        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main`}
-      >
-        <AppShell>{children}</AppShell>
-      </body>
-    </html>
-  )
-}
-</file>
-
 <file path="frontend/src/types/props.ts">
 import React from "react"
 
@@ -13871,6 +13837,56 @@ LOGGING = {
         "django.request": {"level": "WARNING", "propagate": True},
         "motivation": {"level": "DEBUG" if DEBUG else "INFO", "propagate": True},
     },
+}
+</file>
+
+<file path="frontend/src/app/layout.tsx">
+// app/layout.tsx
+import type { Metadata } from "next"
+import { Inter, Cormorant_Garamond } from "next/font/google"
+import Script from "next/script"
+import "./globals.css"
+import { AppShell } from "@/components/AppShell"
+import { Asimovian } from "next/font/google"
+
+const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500"],
+  variable: "--font-cormorant",
+  display: "swap",
+})
+
+const asimovian = Asimovian({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-asimovian",
+  display: "swap",
+})
+
+export const metadata: Metadata = {
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Motivation" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html
+      lang="ru"
+      className={`${inter.variable} ${cormorant.variable} ${asimovian.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
+      </head>
+      <body
+        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main`}
+      >
+        <AppShell>{children}</AppShell>
+      </body>
+    </html>
+  )
 }
 </file>
 

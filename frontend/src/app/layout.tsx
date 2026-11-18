@@ -1,10 +1,9 @@
-// app/layout.tsx
 import type { Metadata } from "next"
 import { Inter, Cormorant_Garamond } from "next/font/google"
+import localFont from "next/font/local" // добавьте импорт
 import Script from "next/script"
 import "./globals.css"
 import { AppShell } from "@/components/AppShell"
-import { Asimovian } from "next/font/google"
 
 const inter = Inter({ subsets: ["cyrillic", "latin"], variable: "--font-sans" })
 const cormorant = Cormorant_Garamond({
@@ -14,9 +13,11 @@ const cormorant = Cormorant_Garamond({
   display: "swap",
 })
 
-const asimovian = Asimovian({
-  subsets: ["latin"],
+// Подключаем локальный Asimovian
+const asimovian = localFont({
+  src: "./fonts/Asimovian-Regular.ttf", // путь относительно layout.tsx
   weight: "400",
+  style: "normal",
   variable: "--font-asimovian",
   display: "swap",
 })
@@ -37,9 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />
       </head>
-      <body
-        className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main`}
-      >
+      <body className={`${inter.className} flex min-h-full flex-col bg-app-bg text-text-main`}>
         <AppShell>{children}</AppShell>
       </body>
     </html>
