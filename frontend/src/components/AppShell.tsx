@@ -23,6 +23,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
         {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
         <header className="sticky top-0 z-10 flex items-center justify-end bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
+          <span
+            className="font-brand text-text-main leading-none select-none"
+            style={{ fontSize: "clamp(20px, 5.5vw, 28px)" }}
+            aria-label="Motivation"
+          >
+            Motivation
+          </span>
           <ProfileMenuSheet />
         </header>
 

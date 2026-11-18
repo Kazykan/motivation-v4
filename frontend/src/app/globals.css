@@ -9,6 +9,7 @@
  * ТЕМА: маппинг CSS-переменных → Tailwind utility-классы
  * ──────────────────────────────────────────────────────────── */
 @theme inline {
+  --font-brand: var(--font-asimovian);
   --font-display: var(--font-cormorant);
 
   /* ФОНЫ */
