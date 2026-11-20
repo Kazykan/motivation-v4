@@ -232,7 +232,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
       <div
         ref={dockRef}
-        style={{ width: tw + 8 }}
+        style={{ width: tw }}
         className="relative flex h-16 items-center gap-1 rounded-full border border-app-surface/60 bg-app-card/90 shadow-[var(--shadow-soft)] backdrop-blur-xl select-none pointer-events-auto touch-none"
         onPointerDown={onDown}
         onPointerMove={onMove}
