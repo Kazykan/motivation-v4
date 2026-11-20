@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useRef } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import type { LucideIcon } from "lucide-react"
 import { S, tune, step, clamp, spring } from "@/lib/motion"
-import { cn } from "@/lib/utils"
 
 export interface DockItem {
   label: string
@@ -17,35 +16,42 @@ interface RubberDockProps {
   onSelect?: (index: number, href: string) => void
 }
 
-const TAB = 64
-const GAP = 4
-const PAD = 4
+const TAB = 64 // Ширина одной кнопки
+const GAP = 4 // Отступ между кнопками
+const PAD = 4 // = p-1 в Tailwind (1 unit = 4px)
 
 export function RubberDock({ items, onSelect }: RubberDockProps) {
   const pathname = usePathname()
   const router = useRouter()
 
   const n = items.length
+  // Общая ширина всех кнопок с отступами
   const tw = n * TAB + Math.max(0, n - 1) * GAP
 
+  // Определяем активный индекс
   const activeIdx = Math.max(
     0,
     items.findIndex((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)),
   )
 
+  // Центр i-й кнопки ОТНОСИТЕЛЬНО ТРЕКА (padding-box, без PAD)
   const cx = useCallback((i: number) => i * (TAB + GAP) + TAB / 2, [])
 
   const dockRef = useRef<HTMLDivElement | null>(null)
   const indicatorRef = useRef<HTMLDivElement | null>(null)
-  const topIconRef = useRef<HTMLDivElement | null>(null)
+  const topIconsRef = useRef<HTMLDivElement | null>(null)
   const rafRef = useRef<number | null>(null)
 
   const reduceMotion = useRef(false)
 
+  // Пружины для левого и правого края индикатора
   const L = useRef(S(cx(activeIdx) - TAB / 2))
   const R = useRef(S(cx(activeIdx) + TAB / 2))
+
+  // Пружина для "наклона" (nudge) всего дока при драге
   const nudge = useRef(S(0))
 
+  // Токены пружин (из CSS или дефолты)
   const tokens = useRef({
     lead: spring("--dock-lead", "640 38"),
     trail: spring("--dock-trail", "150 16"),
@@ -61,9 +67,6 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
     dir: number
   } | null>(null)
   const suppressClick = useRef(false)
-
-  // Индекс кнопки, над которой сейчас капсула (обновляем вручную, а не в RAF)
-  const [underIdx, setUnderIdx] = React.useState(activeIdx)
 
   const moveTo = useCallback((center: number, dir: number, isDrag = false) => {
     const { lead, trail, dragLead, dragTrail } = tokens.current
@@ -89,7 +92,6 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
 
     const dir = Math.sign(cx(activeIdx) - (L.current.x + R.current.x) / 2)
     moveTo(cx(activeIdx), dir)
-    setUnderIdx(activeIdx)
   }, [activeIdx, cx, moveTo])
 
   useEffect(() => {
@@ -109,7 +111,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
 
       const ind = indicatorRef.current
       const dock = dockRef.current
-      const top = topIconRef.current
+      const top = topIconsRef.current
 
       if (ind && dock && top) {
         let l = L.current.x
@@ -117,28 +119,24 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         if (r < l) [l, r] = [r, l]
 
         const iw = Math.max(r - l, 24)
-        const trackH = 64 - 2 * PAD
+
+        // Трек высотой 56 (h-16 минус p-1 сверху/снизу)
+        const trackH = 64 - 2 * PAD // 56
         const ih = iw >= TAB ? trackH : Math.max(trackH - 8, trackH * (iw / TAB))
-        const topOffset = (trackH - ih) / 2
+        const topOffset = (trackH - ih) / 2 // без PAD: indicator уже в padding-box
 
         ind.style.width = `${iw}px`
         ind.style.height = `${ih}px`
         ind.style.borderRadius = `${ih / 2}px`
         ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
 
-        // Белая иконка едет вместе с капсулой (центр капсулы)
-        const cxNow = l + iw / 2
-        top.style.transform = `translate3d(${cxNow - TAB / 2}px, ${topOffset}px, 0)`
-        top.style.width = `${TAB}px`
-        top.style.height = `${ih}px`
+        // Клип верхнего слоя — в координатах трека
+        const vClip = (trackH - ih) / 2
+        const leftClip = Math.max(0, l)
+        const rightClip = Math.max(0, tw - (l + iw))
+        top.style.clipPath = `inset(${vClip}px ${rightClip}px ${vClip}px ${leftClip}px round ${ih / 2}px)`
 
         dock.style.transform = `translateX(${nudge.current.x}px)`
-
-        // Обновляем underIdx только когда капсула остановилась (не drag)
-        if (!drag.current?.live) {
-          const nearest = clamp(Math.round((cxNow - cx(0)) / (TAB + GAP)), 0, n - 1)
-          setUnderIdx((prev) => (prev === nearest ? prev : nearest))
-        }
       }
 
       rafRef.current = requestAnimationFrame(frame)
@@ -148,7 +146,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
-  }, [tw, cx, n])
+  }, [tw])
 
   const rubber = (x: number, min: number, max: number, d = 46) =>
     x < min
@@ -158,7 +156,13 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         : x
 
   const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    drag.current = { id: e.pointerId, x0: e.clientX, last: e.clientX, live: false, dir: 0 }
+    drag.current = {
+      id: e.pointerId,
+      x0: e.clientX,
+      last: e.clientX,
+      live: false,
+      dir: 0,
+    }
   }
 
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -177,6 +181,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
 
     const rect = dockRef.current?.getBoundingClientRect()
     if (!rect) return
+    // localX в координатах ТРЕКА (padding-box) → минус PAD
     const localX = e.clientX - rect.left - PAD
     const clamped = rubber(localX, cx(0), cx(n - 1))
 
@@ -200,7 +205,6 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         if (onSelect) onSelect(clamped, target.href)
         else router.push(target.href)
       }
-      setUnderIdx(clamped)
 
       suppressClick.current = true
       setTimeout(() => (suppressClick.current = false), 0)
@@ -212,7 +216,6 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
     drag.current = null
     nudge.current.t = 0
     moveTo(cx(activeIdx), 0)
-    setUnderIdx(activeIdx)
   }
 
   const onClick = (idx: number, href: string) => {
@@ -222,9 +225,6 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
       else router.push(href)
     }
   }
-
-  const ActiveIcon = items[underIdx]?.icon
-  const activeLabel = items[underIdx]?.label
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
@@ -237,7 +237,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         onPointerUp={onUp}
         onPointerCancel={onCancel}
       >
-        {/* Серые кнопки — скрываем ту, над которой капсула */}
+        {/* Слой серых иконок — flex-дети внутри p-1 */}
         {items.map((item, idx) => {
           const Icon = item.icon
           return (
@@ -245,10 +245,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
               key={item.href}
               type="button"
               onClick={() => onClick(idx, item.href)}
-              className={cn(
-                "relative z-10 flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full text-text-muted transition-opacity duration-150",
-                idx === underIdx ? "opacity-0" : "opacity-100",
-              )}
+              className="relative z-10 flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full text-text-muted transition-colors"
             >
               <Icon className="h-5 w-5" />
               <span className="text-[10px] font-medium leading-none">{item.label}</span>
@@ -256,24 +253,35 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
           )
         })}
 
-        {/* Зелёный индикатор */}
+        {/* Зелёный индикатор — left-0 top-0 = padding-box */}
         <div
           ref={indicatorRef}
           className="pointer-events-none absolute left-0 top-0 rounded-full bg-brand-action"
           style={{ willChange: "transform, width, height" }}
         />
 
-        {/* Одна белая иконка — едет вместе с капсулой */}
-        {ActiveIcon && (
-          <div
-            ref={topIconRef}
-            className="pointer-events-none absolute left-0 top-0 z-20 flex flex-col items-center justify-center gap-0.5 text-brand-action-text"
-            style={{ willChange: "transform, width, height" }}
-          >
-            <ActiveIcon className="h-5 w-5" />
-            <span className="text-[10px] font-medium leading-none">{activeLabel}</span>
-          </div>
-        )}
+        {/* Слой белых иконок — inset-1 = padding-box (совпадает с серыми) */}
+        <div
+          ref={topIconsRef}
+          style={{
+            clipPath: "inset(0 100% 0 0 round 9999px)",
+            willChange: "clip-path",
+          }}
+          className="pointer-events-none absolute inset-1 z-20 flex items-center gap-1 text-brand-action-text"
+        >
+          {items.map((item) => {
+            const Icon = item.icon
+            return (
+              <div
+                key={item.href}
+                className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5"
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-[10px] font-medium leading-none">{item.label}</span>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
