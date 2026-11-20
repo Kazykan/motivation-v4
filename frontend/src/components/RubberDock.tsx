@@ -1,40 +1,62 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import React, { useCallback, useEffect, useRef } from "react"
 import { usePathname, useRouter } from "next/navigation"
+import type { LucideIcon } from "lucide-react"
 import { S, tune, step, clamp, spring } from "@/lib/motion"
 
 export interface DockItem {
-  href: string
   label: string
-  icon: React.ComponentType<{ size?: number; className?: string }>
+  href: string
+  icon: LucideIcon
 }
 
 interface RubberDockProps {
   items: DockItem[]
+  onSelect?: (index: number, href: string) => void
 }
 
-const TAB = 64 // Увеличили для подписей
-const GAP = 4
+const TAB = 64 // Ширина одной кнопки
+const GAP = 4 // Отступ между кнопками
 
-export function RubberDock({ items }: RubberDockProps) {
-  const router = useRouter()
+export function RubberDock({ items, onSelect }: RubberDockProps) {
   const pathname = usePathname()
+  const router = useRouter()
+
+  const n = items.length
+  // Общая ширина всех кнопок с отступами
+  const tw = n * TAB + Math.max(0, n - 1) * GAP
+
+  // Определяем активный индекс
+  const activeIdx = Math.max(
+    0,
+    items.findIndex((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)),
+  )
+
+  // Центр i-й кнопки относительно начала контейнера
+  const cx = useCallback((i: number) => i * (TAB + GAP) + TAB / 2, [])
+
+  const dockRef = useRef<HTMLDivElement | null>(null)
+  const indicatorRef = useRef<HTMLDivElement | null>(null)
+  const topIconsRef = useRef<HTMLDivElement | null>(null)
+  const rafRef = useRef<number | null>(null)
+
   const reduceMotion = useRef(false)
-  const N = items.length
 
-  const dockRef = useRef<HTMLDivElement>(null)
-  const indicatorRef = useRef<HTMLDivElement>(null)
-  const topIconsRef = useRef<HTMLDivElement>(null)
+  // Пружины для левого и правого края индикатора (как в оригинале)
+  const L = useRef(S(cx(activeIdx) - TAB / 2))
+  const R = useRef(S(cx(activeIdx) + TAB / 2))
 
-  const cx = useCallback((i: number) => TAB / 2 + i * (TAB + GAP), [])
-  const TW = N * TAB + (N - 1) * GAP
-
-  const L = useRef(S(cx(0) - TAB / 2))
-  const R = useRef(S(cx(0) + TAB / 2))
+  // Пружина для "наклона" (nudge) всего дока при драге
   const nudge = useRef(S(0))
-  const pops = useRef(items.map(() => S(1)))
-  const W = useRef(S(TW)) // Исправлено: убрали +12
+
+  // Токены пружин (берем из CSS или дефолты)
+  const tokens = useRef({
+    lead: spring("--dock-lead", "640 38"),
+    trail: spring("--dock-trail", "150 16"),
+    dragLead: spring("--dock-drag-lead", "1100 56"),
+    dragTrail: spring("--dock-drag-trail", "320 26"),
+  })
 
   const drag = useRef<{
     id: number | null
@@ -45,17 +67,7 @@ export function RubberDock({ items }: RubberDockProps) {
   } | null>(null)
   const suppressClick = useRef(false)
 
-  const tokens = useRef({
-    lead: spring("--dock-lead", "640 38"),
-    trail: spring("--dock-trail", "150 16"),
-    dragLead: spring("--dock-drag-lead", "1100 56"),
-    dragTrail: spring("--dock-drag-trail", "320 26"),
-  })
-
-  // Активный таб
-  const activeIndex = items.findIndex((item) => pathname.startsWith(item.href))
-  const active = activeIndex >= 0 ? activeIndex : 0
-
+  // Функция движения индикатора
   const moveTo = useCallback((center: number, dir: number, isDrag = false) => {
     const { lead, trail, dragLead, dragTrail } = tokens.current
     const leadSpring = isDrag ? dragLead : lead
@@ -74,39 +86,30 @@ export function RubberDock({ items }: RubberDockProps) {
     R.current.t = center + TAB / 2
   }, [])
 
-  // Начальная установка
+  // Синхронизация при смене URL
   useEffect(() => {
     const match = window.matchMedia("(prefers-reduced-motion: reduce)")
     reduceMotion.current = match.matches
 
-    pops.current = items.map(() => S(1))
-    const center = cx(active)
-    L.current.x = center - TAB / 2
-    R.current.x = center + TAB / 2
-    L.current.t = L.current.x
-    R.current.t = R.current.x
-    W.current.t = TW // Исправлено: убрали +12
-    nudge.current.v = 5
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length])
+    const dir = Math.sign(cx(activeIdx) - (L.current.x + R.current.x) / 2)
+    moveTo(cx(activeIdx), dir)
+  }, [activeIdx, cx, moveTo])
 
-  // rAF-цикл
+  // Основной цикл анимации
   useEffect(() => {
-    let raf: number
     let lastTime = performance.now()
 
     const frame = (now: number) => {
       const dt = Math.min((now - lastTime) / 1000, 1 / 30)
       lastTime = now
 
+      // Делаем несколько подшагов для стабильности
       const sub = 4
       for (let k = 0; k < sub; k++) {
         const d = dt / sub
         step(L.current, d)
         step(R.current, d)
         step(nudge.current, d)
-        step(W.current, d)
-        pops.current.forEach((p) => step(p, d))
       }
 
       const ind = indicatorRef.current
@@ -119,28 +122,31 @@ export function RubberDock({ items }: RubberDockProps) {
         if (r < l) [l, r] = [r, l]
 
         const iw = Math.max(r - l, 24)
-        // Ограничиваем высоту, чтобы не обрезать текст
-        const ih = Math.min(TAB, TAB * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1))
-        const topOffset = (TAB - ih) / 2
+        // Высота индикатора (чтобы не вылезал за пределы)
+        const ih = Math.min(48, 64 * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1))
+        const topOffset = (64 - ih) / 2 // (высота контейнера - высота индикатора)/2
 
+        // Ставим размеры и позицию индикатора
         ind.style.width = `${iw}px`
         ind.style.height = `${ih}px`
         ind.style.borderRadius = `${ih / 2}px`
         ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
 
-        top.style.clipPath = `inset(${topOffset}px ${TW - l - iw}px ${TAB - topOffset - ih}px ${l}px round ${ih / 2}px)`
+        // Клипаем верхний слой с белыми иконками
+        top.style.clipPath = `inset(${topOffset}px ${tw - l - iw}px ${64 - topOffset - ih}px ${l}px round ${ih / 2}px)`
 
-        // Управление шириной и позицией дока
-        dock.style.width = `${W.current.x}px`
-        dock.style.transform = `translateX(calc(-50% + ${nudge.current.x}px))`
+        // Легкое покачивание всего дока
+        dock.style.transform = `translateX(${nudge.current.x}px)`
       }
 
-      raf = requestAnimationFrame(frame)
+      rafRef.current = requestAnimationFrame(frame)
     }
 
-    raf = requestAnimationFrame(frame)
-    return () => cancelAnimationFrame(raf)
-  }, [TW])
+    rafRef.current = requestAnimationFrame(frame)
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [tw])
 
   const rubber = (x: number, min: number, max: number, d = 46) =>
     x < min
@@ -149,7 +155,7 @@ export function RubberDock({ items }: RubberDockProps) {
         ? max + (1 - 1 / (((x - max) * 0.55) / d + 1)) * d
         : x
 
-  const onPointerDown = (e: React.PointerEvent) => {
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
     drag.current = {
       id: e.pointerId,
       x0: e.clientX,
@@ -159,7 +165,7 @@ export function RubberDock({ items }: RubberDockProps) {
     }
   }
 
-  const onPointerMove = (e: React.PointerEvent) => {
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current
     if (!d || e.pointerId !== d.id) return
 
@@ -175,24 +181,32 @@ export function RubberDock({ items }: RubberDockProps) {
 
     const rect = dockRef.current?.getBoundingClientRect()
     if (!rect) return
-    const localX = e.clientX - (rect.left + rect.width / 2) + TW / 2
-    const clamped = rubber(localX, cx(0), cx(N - 1))
+    // Вычисляем локальную координату пальца внутри дока
+    const localX = e.clientX - rect.left
+    const clamped = rubber(localX, cx(0), cx(n - 1))
 
     moveTo(clamped, d.dir, true)
-    nudge.current.t = (clamped - clamp(clamped, cx(0), cx(N - 1))) * 0.35
+    // Если палец ушел за край, док немного наклоняется
+    nudge.current.t = (clamped - clamp(clamped, cx(0), cx(n - 1))) * 0.35
   }
 
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current
     if (!d || e.pointerId !== d.id) return
 
     if (d.live) {
       const center = (L.current.t + R.current.t) / 2
       nudge.current.t = 0
-      const newIndex = Math.round((center - cx(0)) / (TAB + GAP) + d.dir * 0.18)
-      const clamped = clamp(newIndex, 0, N - 1)
 
-      if (clamped !== active) router.push(items[clamped].href)
+      // Находим ближайший таб
+      const newIndex = Math.round((center - cx(0)) / (TAB + GAP) + d.dir * 0.18)
+      const clamped = clamp(newIndex, 0, n - 1)
+
+      if (clamped !== activeIdx) {
+        const target = items[clamped]
+        if (onSelect) onSelect(clamped, target.href)
+        else router.push(target.href)
+      }
 
       suppressClick.current = true
       setTimeout(() => (suppressClick.current = false), 0)
@@ -200,80 +214,72 @@ export function RubberDock({ items }: RubberDockProps) {
     drag.current = null
   }
 
-  // Исправлено: отдельная функция для отмены
-  const onPointerCancel = () => {
+  const onCancel = () => {
     drag.current = null
     nudge.current.t = 0
-    moveTo(cx(active), 0)
+    moveTo(cx(activeIdx), 0)
   }
 
-  const onClick = (index: number) => {
+  const onClick = (idx: number, href: string) => {
     if (suppressClick.current) return
-    if (index !== active) router.push(items[index].href)
+    if (idx !== activeIdx) {
+      if (onSelect) onSelect(idx, href)
+      else router.push(href)
+    }
   }
-
-  useEffect(() => {
-    const dir = Math.sign(cx(active) - (L.current.x + R.current.x) / 2)
-    moveTo(cx(active), dir)
-    if (pops.current[active]) pops.current[active].v -= 3.2
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active])
 
   return (
-    <div
-      ref={dockRef}
-      className="relative left-1/2 h-[68px] rounded-[34px] bg-app-card"
-      // Убрали инлайн-стиль width, им управляет rAF
-    >
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
       <div
-        // Исправлено: justify-start вместо justify-center
-        className="absolute inset-0 flex gap-1 items-center justify-start"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
+        ref={dockRef}
+        style={{ width: tw + 8 }}
+        className="relative h-16 flex items-center gap-1 rounded-full bg-app-bg/80 backdrop-blur-xl border border-border-default/50 p-1 shadow-lg select-none pointer-events-auto touch-none"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onCancel}
       >
-        {items.map((item, i) => {
+        {/* Слой серых иконок */}
+        {items.map((item, idx) => {
           const Icon = item.icon
           return (
             <button
               key={item.href}
-              onClick={() => onClick(i)}
-              className="w-16 h-14 flex flex-col items-center justify-center gap-0.5 rounded-full text-text-muted"
-              aria-label={item.label}
+              type="button"
+              onClick={() => onClick(idx, item.href)}
+              className="relative z-10 flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full text-text-muted transition-colors"
             >
-              <Icon size={20} />
+              <Icon className="h-5 w-5" />
               <span className="text-[10px] font-medium leading-none">{item.label}</span>
             </button>
           )
         })}
-      </div>
 
-      <div
-        ref={indicatorRef}
-        className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
-        // Убрали инлайн-стили width/height, ими управляет rAF
-      />
+        {/* Зелёный индикатор */}
+        <div
+          ref={indicatorRef}
+          className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
+        />
 
-      <div
-        ref={topIconsRef}
-        // Исправлено: justify-start вместо justify-center
-        className="absolute inset-0 flex gap-1 items-center justify-start pointer-events-none"
-        aria-hidden="true"
-        style={{ clipPath: "inset(0 100% 0 0 round 28px)" }}
-      >
-        {items.map((item) => {
-          const Icon = item.icon
-          return (
-            <div
-              key={item.href}
-              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 text-brand-action-text"
-            >
-              <Icon size={20} />
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
-            </div>
-          )
-        })}
+        {/* Слой белых иконок (клипается по индикатору) */}
+        <div
+          ref={topIconsRef}
+          style={{ clipPath: "inset(0 100% 0 0 round 9999px)" }}
+          className="pointer-events-none absolute inset-1 z-20 flex items-center gap-1 text-brand-action-text"
+        >
+          {items.map((item) => {
+            const Icon = item.icon
+            return (
+              <div
+                key={item.href}
+                className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5"
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-[10px] font-medium leading-none">{item.label}</span>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

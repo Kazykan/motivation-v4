@@ -132,11 +132,11 @@
 
 ## 8. AppShell — единственный каркас
 
-- `AppShell` — единственное место, где задаётся `px-4`, `pt-2`, `pb-[calc(56px+env(safe-area-inset-bottom))]`.
-- Страницы возвращают **только** контент. Никаких `px-*`, `pb-*`, `-mx-*`, `-mt-*` у корневого `<div>` страницы.
+- `AppShell` задаёт базовые отступы контента (`px-4`, `pt-2`, `pb-[calc(56px+env(safe-area-inset-bottom))]`), при этом кастомные виджеты (например, `RubberDock`) могут переопределять нижний отступ и позиционирование через пропсы или классы контейнера.
+- Страницы возвращают контент экрана; базовые отступы задаются в `AppShell`, а локальные отступы/выравнивания допустимы там, где это требуется макетом конкретного виджета.
 - `header` в AppShell: `sticky top-0 z-10 pt-[calc(env(safe-area-inset-top)+0.5rem)]`.
-- `Navigation`: `fixed bottom-0 left-1/2 -translate-x-1/2 max-w-md z-20 pb-[env(safe-area-inset-bottom)]`, внутри `h-14`.
-- `Sheet` (`z-50`) перекрывает nav — это ок. Но `SheetFooter` ОБЯЗАН иметь `pb-[env(safe-area-inset-bottom)]`.
+- Нижняя навигация (`Navigation` / `RubberDock`): `fixed bottom-0 left-1/2 -translate-x-1/2 max-w-md z-20 pb-[env(safe-area-inset-bottom)]` с высотой слота навигации `h-14` (или высотой дока с учётом выступов).
+- `Sheet` (`z-50`) перекрывает nav — это ок. `SheetFooter` имеет `pb-[env(safe-area-inset-bottom)]`.
 - Если sheet открывается `side="bottom"` и должен быть НАД nav — `className="bottom-14"`.
 - Онбординг и экраны без меню рендерятся **вне** AppShell.
 

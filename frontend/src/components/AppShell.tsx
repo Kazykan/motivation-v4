@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Контент — px-4 здесь, один раз */}
-        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(76px+env(safe-area-inset-bottom)+16px)]">
+        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))]">
           {children}
         </main>
       </div>
