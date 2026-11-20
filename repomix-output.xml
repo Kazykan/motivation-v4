@@ -8214,289 +8214,6 @@ export function ProfileMenuSheet() {
 }
 </file>
 
-<file path="frontend/src/components/RubberDock.tsx">
-"use client"
-
-import { useEffect, useRef, useCallback } from "react"
-import { usePathname, useRouter } from "next/navigation"
-import { S, tune, step, clamp, spring } from "@/lib/motion"
-
-export interface DockItem {
-  href: string
-  label: string
-  icon: React.ComponentType<{ size?: number; className?: string }>
-}
-
-interface RubberDockProps {
-  items: DockItem[]
-}
-
-const TAB = 64 // Увеличили для подписей
-const GAP = 4
-
-export function RubberDock({ items }: RubberDockProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const reduceMotion = useRef(false)
-  const N = items.length
-
-  const dockRef = useRef<HTMLDivElement>(null)
-  const indicatorRef = useRef<HTMLDivElement>(null)
-  const topIconsRef = useRef<HTMLDivElement>(null)
-
-  const cx = useCallback((i: number) => TAB / 2 + i * (TAB + GAP), [])
-  const TW = N * TAB + (N - 1) * GAP
-
-  const L = useRef(S(cx(0) - TAB / 2))
-  const R = useRef(S(cx(0) + TAB / 2))
-  const nudge = useRef(S(0))
-  const pops = useRef(items.map(() => S(1)))
-  const W = useRef(S(TW)) // Исправлено: убрали +12
-
-  const drag = useRef<{
-    id: number | null
-    x0: number
-    last: number
-    live: boolean
-    dir: number
-  } | null>(null)
-  const suppressClick = useRef(false)
-
-  const tokens = useRef({
-    lead: spring("--dock-lead", "640 38"),
-    trail: spring("--dock-trail", "150 16"),
-    dragLead: spring("--dock-drag-lead", "1100 56"),
-    dragTrail: spring("--dock-drag-trail", "320 26"),
-  })
-
-  // Активный таб
-  const activeIndex = items.findIndex((item) => pathname.startsWith(item.href))
-  const active = activeIndex >= 0 ? activeIndex : 0
-
-  const moveTo = useCallback((center: number, dir: number, isDrag = false) => {
-    const { lead, trail, dragLead, dragTrail } = tokens.current
-    const leadSpring = isDrag ? dragLead : lead
-    const trailSpring = isDrag ? dragTrail : trail
-
-    if (dir === 0) {
-      tune(L.current, 600, 44, reduceMotion.current)
-      tune(R.current, 600, 44, reduceMotion.current)
-    } else {
-      const [leftSpring, rightSpring] =
-        dir > 0 ? [trailSpring, leadSpring] : [leadSpring, trailSpring]
-      tune(L.current, ...leftSpring, reduceMotion.current)
-      tune(R.current, ...rightSpring, reduceMotion.current)
-    }
-    L.current.t = center - TAB / 2
-    R.current.t = center + TAB / 2
-  }, [])
-
-  // Начальная установка
-  useEffect(() => {
-    const match = window.matchMedia("(prefers-reduced-motion: reduce)")
-    reduceMotion.current = match.matches
-
-    pops.current = items.map(() => S(1))
-    const center = cx(active)
-    L.current.x = center - TAB / 2
-    R.current.x = center + TAB / 2
-    L.current.t = L.current.x
-    R.current.t = R.current.x
-    W.current.t = TW // Исправлено: убрали +12
-    nudge.current.v = 5
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length])
-
-  // rAF-цикл
-  useEffect(() => {
-    let raf: number
-    let lastTime = performance.now()
-
-    const frame = (now: number) => {
-      const dt = Math.min((now - lastTime) / 1000, 1 / 30)
-      lastTime = now
-
-      const sub = 4
-      for (let k = 0; k < sub; k++) {
-        const d = dt / sub
-        step(L.current, d)
-        step(R.current, d)
-        step(nudge.current, d)
-        step(W.current, d)
-        pops.current.forEach((p) => step(p, d))
-      }
-
-      const ind = indicatorRef.current
-      const dock = dockRef.current
-      const top = topIconsRef.current
-
-      if (ind && dock && top) {
-        let l = L.current.x
-        let r = R.current.x
-        if (r < l) [l, r] = [r, l]
-
-        const iw = Math.max(r - l, 24)
-        // Ограничиваем высоту, чтобы не обрезать текст
-        const ih = Math.min(TAB, TAB * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1))
-        const topOffset = (TAB - ih) / 2
-
-        ind.style.width = `${iw}px`
-        ind.style.height = `${ih}px`
-        ind.style.borderRadius = `${ih / 2}px`
-        ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
-
-        top.style.clipPath = `inset(${topOffset}px ${TW - l - iw}px ${TAB - topOffset - ih}px ${l}px round ${ih / 2}px)`
-
-        // Управление шириной и позицией дока
-        dock.style.width = `${W.current.x}px`
-        dock.style.transform = `translateX(calc(-50% + ${nudge.current.x}px))`
-      }
-
-      raf = requestAnimationFrame(frame)
-    }
-
-    raf = requestAnimationFrame(frame)
-    return () => cancelAnimationFrame(raf)
-  }, [TW])
-
-  const rubber = (x: number, min: number, max: number, d = 46) =>
-    x < min
-      ? min - (1 - 1 / (((min - x) * 0.55) / d + 1)) * d
-      : x > max
-        ? max + (1 - 1 / (((x - max) * 0.55) / d + 1)) * d
-        : x
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    drag.current = {
-      id: e.pointerId,
-      x0: e.clientX,
-      last: e.clientX,
-      live: false,
-      dir: 0,
-    }
-  }
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const d = drag.current
-    if (!d || e.pointerId !== d.id) return
-
-    if (!d.live && Math.abs(e.clientX - d.x0) > 4) {
-      d.live = true
-      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    }
-    if (!d.live) return
-
-    const delta = e.clientX - d.last
-    d.last = e.clientX
-    if (Math.abs(delta) > 0.5) d.dir = Math.sign(delta)
-
-    const rect = dockRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const localX = e.clientX - (rect.left + rect.width / 2) + TW / 2
-    const clamped = rubber(localX, cx(0), cx(N - 1))
-
-    moveTo(clamped, d.dir, true)
-    nudge.current.t = (clamped - clamp(clamped, cx(0), cx(N - 1))) * 0.35
-  }
-
-  const onPointerUp = (e: React.PointerEvent) => {
-    const d = drag.current
-    if (!d || e.pointerId !== d.id) return
-
-    if (d.live) {
-      const center = (L.current.t + R.current.t) / 2
-      nudge.current.t = 0
-      const newIndex = Math.round((center - cx(0)) / (TAB + GAP) + d.dir * 0.18)
-      const clamped = clamp(newIndex, 0, N - 1)
-
-      if (clamped !== active) router.push(items[clamped].href)
-
-      suppressClick.current = true
-      setTimeout(() => (suppressClick.current = false), 0)
-    }
-    drag.current = null
-  }
-
-  // Исправлено: отдельная функция для отмены
-  const onPointerCancel = () => {
-    drag.current = null
-    nudge.current.t = 0
-    moveTo(cx(active), 0)
-  }
-
-  const onClick = (index: number) => {
-    if (suppressClick.current) return
-    if (index !== active) router.push(items[index].href)
-  }
-
-  useEffect(() => {
-    const dir = Math.sign(cx(active) - (L.current.x + R.current.x) / 2)
-    moveTo(cx(active), dir)
-    if (pops.current[active]) pops.current[active].v -= 3.2
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active])
-
-  return (
-    <div
-      ref={dockRef}
-      className="relative left-1/2 h-[68px] rounded-[34px] bg-app-card"
-      // Убрали инлайн-стиль width, им управляет rAF
-    >
-      <div
-        // Исправлено: justify-start вместо justify-center
-        className="absolute inset-0 flex gap-1 items-center justify-start"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-      >
-        {items.map((item, i) => {
-          const Icon = item.icon
-          return (
-            <button
-              key={item.href}
-              onClick={() => onClick(i)}
-              className="w-16 h-14 flex flex-col items-center justify-center gap-0.5 rounded-full text-text-muted"
-              aria-label={item.label}
-            >
-              <Icon size={20} />
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div
-        ref={indicatorRef}
-        className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
-        // Убрали инлайн-стили width/height, ими управляет rAF
-      />
-
-      <div
-        ref={topIconsRef}
-        // Исправлено: justify-start вместо justify-center
-        className="absolute inset-0 flex gap-1 items-center justify-start pointer-events-none"
-        aria-hidden="true"
-        style={{ clipPath: "inset(0 100% 0 0 round 28px)" }}
-      >
-        {items.map((item) => {
-          const Icon = item.icon
-          return (
-            <div
-              key={item.href}
-              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 text-brand-action-text"
-            >
-              <Icon size={20} />
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-</file>
-
 <file path="frontend/src/components/WeekNavigator.tsx">
 "use client"
 
@@ -9138,203 +8855,6 @@ dj-database-url==3.1.2
 pywebpush==2.5.0
 </file>
 
-<file path="frontend/AI.md">
-# Контекст и архитектурные правила проекта (AI Guidelines)
-
-## 1. Общие принципы
-
-- Проект разделен на две изолированные роли: **Parent (Родитель)** и **Child (Ребенок)**.
-- Строго запрещено смешивать бизнес-логику, компоненты и API-вызовы разных ролей в общих файлах. Каждая роль имеет собственную структуру в `src/app/parent/` и `src/app/child/`.
-- Все переменные окружения должны браться исключительно из `.env` файлов (например, `process.env.NEXT_PUBLIC_API_URL`). Хардкод URL и ключей строго запрещен.
-
-## 2. Архитектура и State Management (Zustand)
-
-- Для отложенной отправки данных и индикации используется Zustand.
-- Хранилище должно содержать:
-  1. Буфер изменений.
-  2. Флаг синхронизации (`isSyncing: boolean`).
-  3. Идентификатор таймера для дебаунса.
-- **Optimistic Updates:** Состояние интерфейса обновляется мгновенно. Предыдущий таймер сбрасывается, запускается новый таймер на 1 секунду (дебаунс), после чего буфер отправляется на бэкенд через Axios, а флаг `isSyncing` переводится в `true`.
-
-## 3. API и Сервисы
-
-- Запросы к бэкенду разделены на `parentApi.ts` и `childApi.ts`.
-- Используется единый экземпляр Axios (`src/lib/axios.ts`), сконфигурированный через переменные окружения.
-
-## 4. Стиль кода и требования
-
-- Никаких лишних комментариев, эмодзи, «воды» или софт-тока при генерации кода. Только строгая техническая реализация.
-- Использовать TypeScript, Tailwind CSS и компоненты интерфейса согласно дизайн-системе. Приоритет отдается компонентам shadcn/ui. Кастомные компоненты создаются только при отсутствии подходящих аналогов в shadcn/ui.
-- цвета брать только из global.css
-- Дробить интерфейсные элементы на модульные переиспользуемые компоненты для исключения дублирования кода и поддержания единого стиля дизайна. Проверять на дублирование компонентов предлагать бути решения.
-- Все функции должны быть отдельно если они будут переиспользоваться не в файлах page.tsx
-- Все пропсы должны быть в отдельном файле
-
-## 5. Кеширование, Optimistic Updates и фоновая синхронизация (TanStack Query)
-
-- Все изменения данных в интерфейсе (особенно частые клики, переключения статусов, календари) должны использовать **Optimistic Updates** (мгновенное локальное обновление стейта / кэша TanStack Query через `queryClient.setQueryData`).
-- Сетевые запросы на модификацию данных должны выполняться с использованием **дебаунса (debounce)** и буферизации (например, через Zustand-хранилища вроде `useLogSyncStore`), чтобы объединять быстрые клики пользователя в пакетные запросы.
-- Пользователь должен видеть визуальный индикатор фонового сохранения (статус синхронизации `isSyncing`), когда данные отправляются на бэкенд.
-- По завершении фоновых запросов обязательно производить инвалидацию соответствующих ключей кеша (`queryClient.invalidateQueries`) для поддержания актуальности данных.
-
-## Правила работы с API (BFF Pattern)
-
-1. Клиентский код отправляет запросы только на локальные маршруты Next.js (`/api/...`).
-2. Внешний Django-бэкенд недоступен напрямую из браузера; запросы к нему осуществляются через Next.js Route Handlers.
-3. Передача секретных заголовков (Telegram ID, токены авторизации) выполняется на стороне сервера Next.js.
-
-# AI.md — Дизайн-система Motivation
-
-> Этот файл — **единственный источник правды** по визуалу.
-> Любой компонент, страница или фикс обязаны соответствовать правилам ниже.
-> Если правило мешает — сначала обнови AI.md, потом код.
-
----
-
-## 1. Принципы
-
-- **Mobile-first Telegram Mini App.** Все экраны проектируются под ширину 360–430px.
-- **Один экран — одна задача.** Никаких перегруженных дашбордов.
-- **Спокойный, «бумажный» UI.** Мягкие тени, скругления 12–20px, без ярких акцентов кроме CTA.
-- **Никаких «магических» значений** в компонентах — только токены из §2.
-
----
-
-## 2. Токены (CSS-переменные в `globals.css`)
-
-Все цвета/радиусы/тени задаются **только** через переменные. В JSX запрещено писать
-`bg-[#abc]`, `text-blue-500`, `rounded-lg` и т.п. вне `components/ui/*`.
-
-### Цвета
-
-| Токен                    | Назначение                     |
-| ------------------------ | ------------------------------ |
-| `--app-bg`               | Фон страницы                   |
-| `--app-surface`          | Фон карточек/инпутов           |
-| `--app-card`             | Фон «приподнятых» карточек     |
-| `--text-main`            | Основной текст                 |
-| `--text-muted`           | Второстепенный текст           |
-| `--brand-primary-soft`   | Мягкий брендовый фон (аватары) |
-| `--brand-action`         | Фон главной кнопки (CTA)       |
-| `--brand-action-text`    | Текст на CTA                   |
-| `--brand-action-hover`   | Hover CTA                      |
-| `--brand-warning-strong` | Акцент предупреждений          |
-| `--finance-pending`      | «Ожидает подтверждения»        |
-| `--finance-approved`     | «Подтверждено»                 |
-| `--border-subtle`        | Границы карточек               |
-
-### Радиусы
-
-| Токен             | Значение | Где применять                    |
-| ----------------- | -------- | -------------------------------- |
-| `--radius-card`   | 16px     | Card, Sheet, Dialog              |
-| `--radius-input`  | 12px     | Input, Select, Button(secondary) |
-| `--radius-button` | 12px     | Button                           |
-| `--radius-pill`   | 9999px   | Badge, Avatar, Dots              |
-
-### Тени
-
-| Токен            | Где                      |
-| ---------------- | ------------------------ |
-| `--shadow-card`  | Card, Sheet              |
-| `--shadow-float` | Bottom-nav, floating CTA |
-
-### Отступы (шкала 4px)
-
-Разрешены только: `0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24` (Tailwind-классы `p-*`, `gap-*`).
-Никаких `p-[13px]`.
-
----
-
-## 3. Слои и z-index (ключевое — от этого «налезает» меню)
-
-**Все слои зафиксированы. Добавлять новые уровни запрещено.**
-
-| Слой                   | z-index | Кто использует                    |
-| ---------------------- | ------- | --------------------------------- |
-| Контент страницы       | `auto`  | всё, что скроллится               |
-| Sticky header          | `10`    | `<AppShell>` header               |
-| Bottom navigation      | `20`    | `<Navigation>`                    |
-| Floating action button | `30`    | если есть                         |
-| Sheet / Dialog overlay | `40`    | `components/ui/sheet.tsx`, dialog |
-| Sheet / Dialog content | `50`    | `components/ui/sheet.tsx`         |
-| Toast                  | `60`    | уведомления                       |
-
-### Правила для Bottom Navigation
-
-- **Высота:** `calc(56px + env(safe-area-inset-bottom))`.
-- **Всегда** `position: fixed; bottom: 0; left: 0; right: 0`.
-- **Всегда** `padding-bottom: env(safe-area-inset-bottom)`.
-- **Всегда** имеет `background: var(--app-bg)` и `box-shadow: var(--shadow-float)`.
-- **Контент страницы обязан компенсировать высоту**:
-  ```tsx
-  <main className="pb-[calc(56px+env(safe-area-inset-bottom))]">…</main>
-  ```
-
-## 8. AppShell — единственный каркас
-
-- `AppShell` — единственное место, где задаётся `px-4`, `pt-2`, `pb-[calc(56px+env(safe-area-inset-bottom))]`.
-- Страницы возвращают **только** контент. Никаких `px-*`, `pb-*`, `-mx-*`, `-mt-*` у корневого `<div>` страницы.
-- `header` в AppShell: `sticky top-0 z-10 pt-[calc(env(safe-area-inset-top)+0.5rem)]`.
-- `Navigation`: `fixed bottom-0 left-1/2 -translate-x-1/2 max-w-md z-20 pb-[env(safe-area-inset-bottom)]`, внутри `h-14`.
-- `Sheet` (`z-50`) перекрывает nav — это ок. Но `SheetFooter` ОБЯЗАН иметь `pb-[env(safe-area-inset-bottom)]`.
-- Если sheet открывается `side="bottom"` и должен быть НАД nav — `className="bottom-14"`.
-- Онбординг и экраны без меню рендерятся **вне** AppShell.
-
-# Концепция приложения
-
-## Модель
-
-**Родитель = работодатель, ребёнок = работник.** Родитель устанавливает цену за работу, ребёнок сам решает, выполнять её или нет. Никаких нотаций и принуждения — только цена и факт.
-
-## Экономика задания
-
-- Задание имеет **недельную цену** (`weekly_price`) и правило выполнения:
-  - **FLEXIBLE** — N выполнений за неделю (например, «2 пятёрки по английскому = 500 ₽, по 250 ₽ за раз»).
-  - **FIXED** — конкретные дни недели (например, «уборка 5 из 5 = 50 ₽, по 10 ₽ за раз»).
-- Приоритет родителя выражается **ценой**: важное стоит дороже. Иерархия «английский 500 > танцы 100 > уборка 50» — это и есть приоритеты, без текстовых нотаций.
-- Цена за одно выполнение = `weekly_price / число выполнений` (с распределением копеек).
-
-## Цикл использования
-
-Приложение **недельное**, не дневное. Реальный паттерн: ребёнок заходит в конце недели и отмечает дни, родитель раз в неделю проверяет и платит. **Не проектировать под ежедневный заход, не добавлять ежедневную геймификацию, не делать кнопку «заходи каждый день».**
-
-## Ключевой принцип: честность через трение
-
-- **Один клик = один день = одна отметка.** Нельзя «отметить всё» одной кнопкой — это легализация обмана и убивает доверие родителя к данным.
-- **Нельзя отмечать будущие дни.** Прошлые — можно (ребёнок в воскресенье отмечает понедельник).
-- **Родитель подтверждает поштучно**, без bulk-approve в UI. Трение = честность с обеих сторон.
-- Трение — фича, а не баг. Оно отделяет «я реально сделал» от «я хочу денег».
-
-## Три вкладки ребёнка
-
-| Вкладка     | Вопрос ребёнка          | Содержимое                                                                                                         |
-| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Задания** | «Что мне сделать?»      | Сетка «задание × 7 дней», отметка кликом по ячейке, деньги по каждому клику сразу. Без CTA «отметить сегодня/всё». |
-| **Кошелёк** | «Сколько у меня денег?» | Всего накоплено, эта неделя (заработано / ждёт проверки / можно ещё), история выплат со статусом.                  |
-| **Профиль** | «Кто я?»                | Имя, возраст, семья, успехи (всего выполнено, лучшая неделя). Без технотекста и «обновить сессию».                 |
-
-## Что запрещено
-
-- Кнопка «отметить всё» / «отправить неделю» у ребёнка.
-- Bulk-approve в UI родителя.
-- Ежедневная геймификация, стрики, «зайди каждый день».
-- Блок «Сегодня» с отдельными CTA.
-- Хардкод сумм и заглушки в данных (например, `earned || 300`).
-- Финансовые термины для взрослых («Максимум», «Итого», «Прогноз») — использовать детские формулировки («Можно заработать», «Ждёт проверки родителя»).
-
-## Деньги в UI
-
-- Сумма за одно выполнение видна **в карточке задания** (`+250 ₽ за раз`).
-- После каждого клика — **немедленная обратная связь**: `+250 ₽ ждёт проверки`.
-- Сверху недели: `Заработано · Ждёт проверки · Можно ещё` — не «Максимум/Итого».
-
-## Будущее (не сейчас)
-
-- Настройка вида: недельный / дневной режим.
-- Цель накопления («коплю на наушники») с прогресс-баром.
-</file>
-
 <file path="frontend/src/app/child/balance/page.tsx">
 "use client"
 
@@ -9948,55 +9468,6 @@ export default function ParentTasksPage() {
 }
 </file>
 
-<file path="frontend/src/components/AppShell.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { Navigation } from "@/components/Navigation"
-import { ProfileMenuSheet } from "./ProfileMenuSheet"
-
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient())
-
-  useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp
-    if (tg) {
-      try {
-        tg.ready()
-        tg.expand()
-      } catch {}
-    }
-  }, [])
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
-        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
-        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
-          <span
-            className="font-brand text-text-main leading-none select-none"
-            style={{ fontSize: "clamp(20px, 5.5vw, 28px)" }}
-            aria-label="Motivation"
-          >
-            Motivation
-          </span>
-          <ProfileMenuSheet />
-        </header>
-
-        {/* Контент — px-4 здесь, один раз */}
-        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(76px+env(safe-area-inset-bottom)+16px)]">
-          {children}
-        </main>
-      </div>
-
-      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
-      <Navigation />
-    </QueryClientProvider>
-  )
-}
-</file>
-
 <file path="frontend/src/components/ChildCard.tsx">
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -10042,6 +9513,295 @@ export function ChildCard({ child, action }: ChildCardProps) {
         {action && <div className="shrink-0">{action}</div>}
       </CardContent>
     </Card>
+  )
+}
+</file>
+
+<file path="frontend/src/components/RubberDock.tsx">
+"use client"
+
+import React, { useCallback, useEffect, useRef } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import type { LucideIcon } from "lucide-react"
+import { S, tune, step, clamp, spring } from "@/lib/motion"
+
+export interface DockItem {
+  label: string
+  href: string
+  icon: LucideIcon
+}
+
+interface RubberDockProps {
+  items: DockItem[]
+  onSelect?: (index: number, href: string) => void
+}
+
+const TAB = 64 // Ширина одной кнопки
+const GAP = 4 // Отступ между кнопками
+
+export function RubberDock({ items, onSelect }: RubberDockProps) {
+  const pathname = usePathname()
+  const router = useRouter()
+
+  const n = items.length
+  // Общая ширина всех кнопок с отступами
+  const tw = n * TAB + Math.max(0, n - 1) * GAP
+
+  // Определяем активный индекс
+  const activeIdx = Math.max(
+    0,
+    items.findIndex((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)),
+  )
+
+  // Центр i-й кнопки относительно начала контейнера
+  const cx = useCallback((i: number) => i * (TAB + GAP) + TAB / 2, [])
+
+  const dockRef = useRef<HTMLDivElement | null>(null)
+  const indicatorRef = useRef<HTMLDivElement | null>(null)
+  const topIconsRef = useRef<HTMLDivElement | null>(null)
+  const rafRef = useRef<number | null>(null)
+
+  const reduceMotion = useRef(false)
+
+  // Пружины для левого и правого края индикатора (как в оригинале)
+  const L = useRef(S(cx(activeIdx) - TAB / 2))
+  const R = useRef(S(cx(activeIdx) + TAB / 2))
+
+  // Пружина для "наклона" (nudge) всего дока при драге
+  const nudge = useRef(S(0))
+
+  // Токены пружин (берем из CSS или дефолты)
+  const tokens = useRef({
+    lead: spring("--dock-lead", "640 38"),
+    trail: spring("--dock-trail", "150 16"),
+    dragLead: spring("--dock-drag-lead", "1100 56"),
+    dragTrail: spring("--dock-drag-trail", "320 26"),
+  })
+
+  const drag = useRef<{
+    id: number | null
+    x0: number
+    last: number
+    live: boolean
+    dir: number
+  } | null>(null)
+  const suppressClick = useRef(false)
+
+  // Функция движения индикатора
+  const moveTo = useCallback((center: number, dir: number, isDrag = false) => {
+    const { lead, trail, dragLead, dragTrail } = tokens.current
+    const leadSpring = isDrag ? dragLead : lead
+    const trailSpring = isDrag ? dragTrail : trail
+
+    if (dir === 0) {
+      tune(L.current, 600, 44, reduceMotion.current)
+      tune(R.current, 600, 44, reduceMotion.current)
+    } else {
+      const [leftSpring, rightSpring] =
+        dir > 0 ? [trailSpring, leadSpring] : [leadSpring, trailSpring]
+      tune(L.current, ...leftSpring, reduceMotion.current)
+      tune(R.current, ...rightSpring, reduceMotion.current)
+    }
+    L.current.t = center - TAB / 2
+    R.current.t = center + TAB / 2
+  }, [])
+
+  // Синхронизация при смене URL
+  useEffect(() => {
+    const match = window.matchMedia("(prefers-reduced-motion: reduce)")
+    reduceMotion.current = match.matches
+
+    const dir = Math.sign(cx(activeIdx) - (L.current.x + R.current.x) / 2)
+    moveTo(cx(activeIdx), dir)
+  }, [activeIdx, cx, moveTo])
+
+  // Основной цикл анимации
+  useEffect(() => {
+    let lastTime = performance.now()
+
+    const frame = (now: number) => {
+      const dt = Math.min((now - lastTime) / 1000, 1 / 30)
+      lastTime = now
+
+      // Делаем несколько подшагов для стабильности
+      const sub = 4
+      for (let k = 0; k < sub; k++) {
+        const d = dt / sub
+        step(L.current, d)
+        step(R.current, d)
+        step(nudge.current, d)
+      }
+
+      const ind = indicatorRef.current
+      const dock = dockRef.current
+      const top = topIconsRef.current
+
+      if (ind && dock && top) {
+        let l = L.current.x
+        let r = R.current.x
+        if (r < l) [l, r] = [r, l]
+
+        const iw = Math.max(r - l, 24)
+
+        // Высота: если ширина = ширине кнопки, то высота = высоте кнопки (64).
+        // Если шире — плавно уменьшаем до 48, чтобы сохранить "капсулу".
+        const ih = iw >= TAB ? 64 : Math.max(48, 64 * (iw / TAB))
+        const topOffset = (64 - ih) / 2
+
+        ind.style.width = `${iw}px`
+        ind.style.height = `${ih}px`
+        ind.style.borderRadius = `${ih / 2}px`
+        ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
+
+        // Клип верхнего слоя
+        top.style.clipPath = `inset(${topOffset}px ${tw - l - iw}px ${64 - topOffset - ih}px ${l}px round ${ih / 2}px)`
+
+        dock.style.transform = `translateX(${nudge.current.x}px)`
+      }
+
+      rafRef.current = requestAnimationFrame(frame)
+    }
+
+    rafRef.current = requestAnimationFrame(frame)
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [tw])
+
+  const rubber = (x: number, min: number, max: number, d = 46) =>
+    x < min
+      ? min - (1 - 1 / (((min - x) * 0.55) / d + 1)) * d
+      : x > max
+        ? max + (1 - 1 / (((x - max) * 0.55) / d + 1)) * d
+        : x
+
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current = {
+      id: e.pointerId,
+      x0: e.clientX,
+      last: e.clientX,
+      live: false,
+      dir: 0,
+    }
+  }
+
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id) return
+
+    if (!d.live && Math.abs(e.clientX - d.x0) > 4) {
+      d.live = true
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    }
+    if (!d.live) return
+
+    const delta = e.clientX - d.last
+    d.last = e.clientX
+    if (Math.abs(delta) > 0.5) d.dir = Math.sign(delta)
+
+    const rect = dockRef.current?.getBoundingClientRect()
+    if (!rect) return
+    // Вычисляем локальную координату пальца внутри дока
+    const localX = e.clientX - rect.left
+    const clamped = rubber(localX, cx(0), cx(n - 1))
+
+    moveTo(clamped, d.dir, true)
+    // Если палец ушел за край, док немного наклоняется
+    nudge.current.t = (clamped - clamp(clamped, cx(0), cx(n - 1))) * 0.35
+  }
+
+  const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id) return
+
+    if (d.live) {
+      const center = (L.current.t + R.current.t) / 2
+      nudge.current.t = 0
+
+      // Находим ближайший таб
+      const newIndex = Math.round((center - cx(0)) / (TAB + GAP) + d.dir * 0.18)
+      const clamped = clamp(newIndex, 0, n - 1)
+
+      if (clamped !== activeIdx) {
+        const target = items[clamped]
+        if (onSelect) onSelect(clamped, target.href)
+        else router.push(target.href)
+      }
+
+      suppressClick.current = true
+      setTimeout(() => (suppressClick.current = false), 0)
+    }
+    drag.current = null
+  }
+
+  const onCancel = () => {
+    drag.current = null
+    nudge.current.t = 0
+    moveTo(cx(activeIdx), 0)
+  }
+
+  const onClick = (idx: number, href: string) => {
+    if (suppressClick.current) return
+    if (idx !== activeIdx) {
+      if (onSelect) onSelect(idx, href)
+      else router.push(href)
+    }
+  }
+
+  return (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
+      <div
+        ref={dockRef}
+        style={{ width: tw + 8 }}
+        className="relative h-16 flex items-center gap-1 rounded-full bg-app-bg/80 backdrop-blur-xl border border-border-default/50 shadow-lg select-none pointer-events-auto touch-none"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onCancel}
+      >
+        {/* Слой серых иконок */}
+        {items.map((item, idx) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.href}
+              type="button"
+              onClick={() => onClick(idx, item.href)}
+              className="relative z-10 flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full text-text-muted transition-colors"
+            >
+              <Icon className="h-5 w-5" />
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+            </button>
+          )
+        })}
+
+        {/* Зелёный индикатор */}
+        <div
+          ref={indicatorRef}
+          className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
+        />
+
+        {/* Слой белых иконок (клипается по индикатору) */}
+        <div
+          ref={topIconsRef}
+          style={{ clipPath: "inset(0 100% 0 0 round 9999px)" }}
+          className="pointer-events-none absolute inset-1 z-20 flex items-center gap-1 text-brand-action-text"
+        >
+          {items.map((item) => {
+            const Icon = item.icon
+            return (
+              <div
+                key={item.href}
+                className="flex h-full w-16 shrink-0 flex-col items-center justify-center gap-0.5"
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-[10px] font-medium leading-none">{item.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
   )
 }
 </file>
@@ -10545,6 +10305,203 @@ class TelegramInitDataAuthentication(authentication.BaseAuthentication):
         return (user, None)
 </file>
 
+<file path="frontend/AI.md">
+# Контекст и архитектурные правила проекта (AI Guidelines)
+
+## 1. Общие принципы
+
+- Проект разделен на две изолированные роли: **Parent (Родитель)** и **Child (Ребенок)**.
+- Строго запрещено смешивать бизнес-логику, компоненты и API-вызовы разных ролей в общих файлах. Каждая роль имеет собственную структуру в `src/app/parent/` и `src/app/child/`.
+- Все переменные окружения должны браться исключительно из `.env` файлов (например, `process.env.NEXT_PUBLIC_API_URL`). Хардкод URL и ключей строго запрещен.
+
+## 2. Архитектура и State Management (Zustand)
+
+- Для отложенной отправки данных и индикации используется Zustand.
+- Хранилище должно содержать:
+  1. Буфер изменений.
+  2. Флаг синхронизации (`isSyncing: boolean`).
+  3. Идентификатор таймера для дебаунса.
+- **Optimistic Updates:** Состояние интерфейса обновляется мгновенно. Предыдущий таймер сбрасывается, запускается новый таймер на 1 секунду (дебаунс), после чего буфер отправляется на бэкенд через Axios, а флаг `isSyncing` переводится в `true`.
+
+## 3. API и Сервисы
+
+- Запросы к бэкенду разделены на `parentApi.ts` и `childApi.ts`.
+- Используется единый экземпляр Axios (`src/lib/axios.ts`), сконфигурированный через переменные окружения.
+
+## 4. Стиль кода и требования
+
+- Никаких лишних комментариев, эмодзи, «воды» или софт-тока при генерации кода. Только строгая техническая реализация.
+- Использовать TypeScript, Tailwind CSS и компоненты интерфейса согласно дизайн-системе. Приоритет отдается компонентам shadcn/ui. Кастомные компоненты создаются только при отсутствии подходящих аналогов в shadcn/ui.
+- цвета брать только из global.css
+- Дробить интерфейсные элементы на модульные переиспользуемые компоненты для исключения дублирования кода и поддержания единого стиля дизайна. Проверять на дублирование компонентов предлагать бути решения.
+- Все функции должны быть отдельно если они будут переиспользоваться не в файлах page.tsx
+- Все пропсы должны быть в отдельном файле
+
+## 5. Кеширование, Optimistic Updates и фоновая синхронизация (TanStack Query)
+
+- Все изменения данных в интерфейсе (особенно частые клики, переключения статусов, календари) должны использовать **Optimistic Updates** (мгновенное локальное обновление стейта / кэша TanStack Query через `queryClient.setQueryData`).
+- Сетевые запросы на модификацию данных должны выполняться с использованием **дебаунса (debounce)** и буферизации (например, через Zustand-хранилища вроде `useLogSyncStore`), чтобы объединять быстрые клики пользователя в пакетные запросы.
+- Пользователь должен видеть визуальный индикатор фонового сохранения (статус синхронизации `isSyncing`), когда данные отправляются на бэкенд.
+- По завершении фоновых запросов обязательно производить инвалидацию соответствующих ключей кеша (`queryClient.invalidateQueries`) для поддержания актуальности данных.
+
+## Правила работы с API (BFF Pattern)
+
+1. Клиентский код отправляет запросы только на локальные маршруты Next.js (`/api/...`).
+2. Внешний Django-бэкенд недоступен напрямую из браузера; запросы к нему осуществляются через Next.js Route Handlers.
+3. Передача секретных заголовков (Telegram ID, токены авторизации) выполняется на стороне сервера Next.js.
+
+# AI.md — Дизайн-система Motivation
+
+> Этот файл — **единственный источник правды** по визуалу.
+> Любой компонент, страница или фикс обязаны соответствовать правилам ниже.
+> Если правило мешает — сначала обнови AI.md, потом код.
+
+---
+
+## 1. Принципы
+
+- **Mobile-first Telegram Mini App.** Все экраны проектируются под ширину 360–430px.
+- **Один экран — одна задача.** Никаких перегруженных дашбордов.
+- **Спокойный, «бумажный» UI.** Мягкие тени, скругления 12–20px, без ярких акцентов кроме CTA.
+- **Никаких «магических» значений** в компонентах — только токены из §2.
+
+---
+
+## 2. Токены (CSS-переменные в `globals.css`)
+
+Все цвета/радиусы/тени задаются **только** через переменные. В JSX запрещено писать
+`bg-[#abc]`, `text-blue-500`, `rounded-lg` и т.п. вне `components/ui/*`.
+
+### Цвета
+
+| Токен                    | Назначение                     |
+| ------------------------ | ------------------------------ |
+| `--app-bg`               | Фон страницы                   |
+| `--app-surface`          | Фон карточек/инпутов           |
+| `--app-card`             | Фон «приподнятых» карточек     |
+| `--text-main`            | Основной текст                 |
+| `--text-muted`           | Второстепенный текст           |
+| `--brand-primary-soft`   | Мягкий брендовый фон (аватары) |
+| `--brand-action`         | Фон главной кнопки (CTA)       |
+| `--brand-action-text`    | Текст на CTA                   |
+| `--brand-action-hover`   | Hover CTA                      |
+| `--brand-warning-strong` | Акцент предупреждений          |
+| `--finance-pending`      | «Ожидает подтверждения»        |
+| `--finance-approved`     | «Подтверждено»                 |
+| `--border-subtle`        | Границы карточек               |
+
+### Радиусы
+
+| Токен             | Значение | Где применять                    |
+| ----------------- | -------- | -------------------------------- |
+| `--radius-card`   | 16px     | Card, Sheet, Dialog              |
+| `--radius-input`  | 12px     | Input, Select, Button(secondary) |
+| `--radius-button` | 12px     | Button                           |
+| `--radius-pill`   | 9999px   | Badge, Avatar, Dots              |
+
+### Тени
+
+| Токен            | Где                      |
+| ---------------- | ------------------------ |
+| `--shadow-card`  | Card, Sheet              |
+| `--shadow-float` | Bottom-nav, floating CTA |
+
+### Отступы (шкала 4px)
+
+Разрешены только: `0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24` (Tailwind-классы `p-*`, `gap-*`).
+Никаких `p-[13px]`.
+
+---
+
+## 3. Слои и z-index (ключевое — от этого «налезает» меню)
+
+**Все слои зафиксированы. Добавлять новые уровни запрещено.**
+
+| Слой                   | z-index | Кто использует                    |
+| ---------------------- | ------- | --------------------------------- |
+| Контент страницы       | `auto`  | всё, что скроллится               |
+| Sticky header          | `10`    | `<AppShell>` header               |
+| Bottom navigation      | `20`    | `<Navigation>`                    |
+| Floating action button | `30`    | если есть                         |
+| Sheet / Dialog overlay | `40`    | `components/ui/sheet.tsx`, dialog |
+| Sheet / Dialog content | `50`    | `components/ui/sheet.tsx`         |
+| Toast                  | `60`    | уведомления                       |
+
+### Правила для Bottom Navigation
+
+- **Высота:** `calc(56px + env(safe-area-inset-bottom))`.
+- **Всегда** `position: fixed; bottom: 0; left: 0; right: 0`.
+- **Всегда** `padding-bottom: env(safe-area-inset-bottom)`.
+- **Всегда** имеет `background: var(--app-bg)` и `box-shadow: var(--shadow-float)`.
+- **Контент страницы обязан компенсировать высоту**:
+  ```tsx
+  <main className="pb-[calc(56px+env(safe-area-inset-bottom))]">…</main>
+  ```
+
+## 8. AppShell — единственный каркас
+
+- `AppShell` задаёт базовые отступы контента (`px-4`, `pt-2`, `pb-[calc(56px+env(safe-area-inset-bottom))]`), при этом кастомные виджеты (например, `RubberDock`) могут переопределять нижний отступ и позиционирование через пропсы или классы контейнера.
+- Страницы возвращают контент экрана; базовые отступы задаются в `AppShell`, а локальные отступы/выравнивания допустимы там, где это требуется макетом конкретного виджета.
+- `header` в AppShell: `sticky top-0 z-10 pt-[calc(env(safe-area-inset-top)+0.5rem)]`.
+- Нижняя навигация (`Navigation` / `RubberDock`): `fixed bottom-0 left-1/2 -translate-x-1/2 max-w-md z-20 pb-[env(safe-area-inset-bottom)]` с высотой слота навигации `h-14` (или высотой дока с учётом выступов).
+- `Sheet` (`z-50`) перекрывает nav — это ок. `SheetFooter` имеет `pb-[env(safe-area-inset-bottom)]`.
+- Если sheet открывается `side="bottom"` и должен быть НАД nav — `className="bottom-14"`.
+- Онбординг и экраны без меню рендерятся **вне** AppShell.
+
+# Концепция приложения
+
+## Модель
+
+**Родитель = работодатель, ребёнок = работник.** Родитель устанавливает цену за работу, ребёнок сам решает, выполнять её или нет. Никаких нотаций и принуждения — только цена и факт.
+
+## Экономика задания
+
+- Задание имеет **недельную цену** (`weekly_price`) и правило выполнения:
+  - **FLEXIBLE** — N выполнений за неделю (например, «2 пятёрки по английскому = 500 ₽, по 250 ₽ за раз»).
+  - **FIXED** — конкретные дни недели (например, «уборка 5 из 5 = 50 ₽, по 10 ₽ за раз»).
+- Приоритет родителя выражается **ценой**: важное стоит дороже. Иерархия «английский 500 > танцы 100 > уборка 50» — это и есть приоритеты, без текстовых нотаций.
+- Цена за одно выполнение = `weekly_price / число выполнений` (с распределением копеек).
+
+## Цикл использования
+
+Приложение **недельное**, не дневное. Реальный паттерн: ребёнок заходит в конце недели и отмечает дни, родитель раз в неделю проверяет и платит. **Не проектировать под ежедневный заход, не добавлять ежедневную геймификацию, не делать кнопку «заходи каждый день».**
+
+## Ключевой принцип: честность через трение
+
+- **Один клик = один день = одна отметка.** Нельзя «отметить всё» одной кнопкой — это легализация обмана и убивает доверие родителя к данным.
+- **Нельзя отмечать будущие дни.** Прошлые — можно (ребёнок в воскресенье отмечает понедельник).
+- **Родитель подтверждает поштучно**, без bulk-approve в UI. Трение = честность с обеих сторон.
+- Трение — фича, а не баг. Оно отделяет «я реально сделал» от «я хочу денег».
+
+## Три вкладки ребёнка
+
+| Вкладка     | Вопрос ребёнка          | Содержимое                                                                                                         |
+| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Задания** | «Что мне сделать?»      | Сетка «задание × 7 дней», отметка кликом по ячейке, деньги по каждому клику сразу. Без CTA «отметить сегодня/всё». |
+| **Кошелёк** | «Сколько у меня денег?» | Всего накоплено, эта неделя (заработано / ждёт проверки / можно ещё), история выплат со статусом.                  |
+| **Профиль** | «Кто я?»                | Имя, возраст, семья, успехи (всего выполнено, лучшая неделя). Без технотекста и «обновить сессию».                 |
+
+## Что запрещено
+
+- Кнопка «отметить всё» / «отправить неделю» у ребёнка.
+- Bulk-approve в UI родителя.
+- Ежедневная геймификация, стрики, «зайди каждый день».
+- Блок «Сегодня» с отдельными CTA.
+- Хардкод сумм и заглушки в данных (например, `earned || 300`).
+- Финансовые термины для взрослых («Максимум», «Итого», «Прогноз») — использовать детские формулировки («Можно заработать», «Ждёт проверки родителя»).
+
+## Деньги в UI
+
+- Сумма за одно выполнение видна **в карточке задания** (`+250 ₽ за раз`).
+- После каждого клика — **немедленная обратная связь**: `+250 ₽ ждёт проверки`.
+- Сверху недели: `Заработано · Ждёт проверки · Можно ещё` — не «Максимум/Итого».
+
+## Будущее (не сейчас)
+
+- Настройка вида: недельный / дневной режим.
+- Цель накопления («коплю на наушники») с прогресс-баром.
+</file>
+
 <file path="frontend/src/app/child/tasks/page.tsx">
 "use client"
 
@@ -10919,6 +10876,55 @@ export default function ParentChildrenPage() {
         onGenerateNew={handleGenerateNew}
       />
     </div>
+  )
+}
+</file>
+
+<file path="frontend/src/components/AppShell.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Navigation } from "@/components/Navigation"
+import { ProfileMenuSheet } from "./ProfileMenuSheet"
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient())
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp
+    if (tg) {
+      try {
+        tg.ready()
+        tg.expand()
+      } catch {}
+    }
+  }, [])
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
+        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
+          <span
+            className="font-brand text-text-main leading-none select-none"
+            style={{ fontSize: "clamp(20px, 5.5vw, 28px)" }}
+            aria-label="Motivation"
+          >
+            Motivation
+          </span>
+          <ProfileMenuSheet />
+        </header>
+
+        {/* Контент — px-4 здесь, один раз */}
+        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))]">
+          {children}
+        </main>
+      </div>
+
+      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
+      <Navigation />
+    </QueryClientProvider>
   )
 }
 </file>
@@ -13629,74 +13635,6 @@ export default function ParentReviewPage() {
 }
 </file>
 
-<file path="frontend/src/components/Navigation.tsx">
-"use client"
-
-import { usePathname } from "next/navigation"
-import {
-  Users,
-  CheckSquare,
-  ClipboardCheck,
-  FileText,
-  Wallet,
-  User as UserIcon,
-} from "lucide-react"
-import { RubberDock, DockItem } from "@/components/RubberDock"
-import { useLogSyncStore } from "@/store/useLogSyncStore"
-import { useMe } from "@/hooks/useMe"
-
-export function Navigation() {
-  const pathname = usePathname()
-  const { me, ready } = useMe()
-  const isSyncing = useLogSyncStore((state) => state.isSyncing)
-  const lastError = useLogSyncStore((s) => s.lastError)
-  const clearError = useLogSyncStore((s) => s.clearError)
-
-  if (!ready || !me?.onboarded) return null
-
-  const role = me.role
-
-  const parentNav: DockItem[] = [
-    { label: "Дети", href: "/parent/children", icon: Users },
-    { label: "Задания", href: "/parent/tasks", icon: CheckSquare },
-    { label: "Проверка", href: "/parent/review", icon: ClipboardCheck },
-    { label: "Отчеты", href: "/parent/reports", icon: FileText },
-  ]
-
-  const childNav: DockItem[] = [
-    { label: "Задания", href: "/child/tasks", icon: CheckSquare },
-    { label: "Кошелёк", href: "/child/balance", icon: Wallet },
-    { label: "Профиль", href: "/child/profile", icon: UserIcon },
-  ]
-
-  const currentNav = role === "PARENT" ? parentNav : childNav
-
-  return (
-    // Убрали внешний div с border-t, оставили один fixed-контейнер
-    <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 bg-app-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg shadow-[var(--shadow-float)]">
-      <div className="relative flex h-[76px] items-center justify-center px-4">
-        {isSyncing && (
-          <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
-            <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
-            Сохранение...
-          </div>
-        )}
-        {lastError && (
-          <button
-            onClick={clearError}
-            className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
-          >
-            {lastError}
-          </button>
-        )}
-
-        <RubberDock items={currentNav} />
-      </div>
-    </nav>
-  )
-}
-</file>
-
 <file path="frontend/src/types/props.ts">
 import React from "react"
 
@@ -14177,6 +14115,69 @@ LOGGING = {
         "django.request": {"level": "WARNING", "propagate": True},
         "motivation": {"level": "DEBUG" if DEBUG else "INFO", "propagate": True},
     },
+}
+</file>
+
+<file path="frontend/src/components/Navigation.tsx">
+"use client"
+
+import {
+  Users,
+  CheckSquare,
+  ClipboardCheck,
+  FileText,
+  Wallet,
+  User as UserIcon,
+} from "lucide-react"
+import { RubberDock, DockItem } from "@/components/RubberDock"
+import { useLogSyncStore } from "@/store/useLogSyncStore"
+import { useMe } from "@/hooks/useMe"
+
+export function Navigation() {
+  const { me, ready } = useMe()
+  const isSyncing = useLogSyncStore((state) => state.isSyncing)
+  const lastError = useLogSyncStore((s) => s.lastError)
+  const clearError = useLogSyncStore((s) => s.clearError)
+
+  if (!ready || !me?.onboarded) return null
+
+  const role = me.role
+
+  const parentNav: DockItem[] = [
+    { label: "Дети", href: "/parent/children", icon: Users },
+    { label: "Задания", href: "/parent/tasks", icon: CheckSquare },
+    { label: "Проверка", href: "/parent/review", icon: ClipboardCheck },
+    { label: "Отчеты", href: "/parent/reports", icon: FileText },
+  ]
+
+  const childNav: DockItem[] = [
+    { label: "Задания", href: "/child/tasks", icon: CheckSquare },
+    { label: "Кошелёк", href: "/child/balance", icon: Wallet },
+    { label: "Профиль", href: "/child/profile", icon: UserIcon },
+  ]
+
+  const currentNav = role === "PARENT" ? parentNav : childNav
+
+  return (
+    <>
+      {isSyncing && (
+        <div className="fixed bottom-24 right-4 z-50 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs backdrop-blur-sm">
+          <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
+          Сохранение...
+        </div>
+      )}
+      {lastError && (
+        <button
+          onClick={clearError}
+          className="fixed bottom-32 right-4 z-50 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm backdrop-blur-sm"
+        >
+          {lastError}
+        </button>
+      )}
+
+      <RubberDock items={currentNav} />
+    </>
+  )
 }
 </file>
 

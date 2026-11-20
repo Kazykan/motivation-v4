@@ -233,7 +233,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
       <div
         ref={dockRef}
         style={{ width: tw + 8 }}
-        className="relative h-16 flex items-center gap-1 rounded-full bg-app-bg/80 backdrop-blur-xl border border-border-default/50 shadow-lg select-none pointer-events-auto touch-none"
+        className="relative flex h-16 items-center gap-1 rounded-full border border-app-surface/60 bg-app-card/90 shadow-[var(--shadow-soft)] backdrop-blur-xl select-none pointer-events-auto touch-none"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -258,14 +258,15 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         {/* Зелёный индикатор */}
         <div
           ref={indicatorRef}
-          className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
+          className="pointer-events-none absolute left-0 top-0 rounded-full bg-brand-action"
+          style={{ willChange: "transform, width, height" }}
         />
 
         {/* Слой белых иконок (клипается по индикатору) */}
         <div
           ref={topIconsRef}
-          style={{ clipPath: "inset(0 100% 0 0 round 9999px)" }}
-          className="pointer-events-none absolute inset-1 z-20 flex items-center gap-1 text-brand-action-text"
+          style={{ clipPath: "inset(0 100% 0 0 round 9999px)", willChange: "clip-path" }}
+          className="pointer-events-none absolute inset-0 z-20 flex items-center gap-1 text-brand-action-text"
         >
           {items.map((item) => {
             const Icon = item.icon
