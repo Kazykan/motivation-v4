@@ -130,6 +130,8 @@ export function RubberDock({ items }: RubberDockProps) {
 
         top.style.clipPath = `inset(${topOffset}px ${TW - l - iw}px ${TAB - topOffset - ih}px ${l}px round ${ih / 2}px)`
 
+        dock.style.width = `${W.current.x}px`
+
         dock.style.transform = `translateX(calc(-50% + ${nudge.current.x}px))`
       }
 
@@ -212,11 +214,7 @@ export function RubberDock({ items }: RubberDockProps) {
   }, [active])
 
   return (
-    <div
-      ref={dockRef}
-      className="relative h-[68px] rounded-[34px] bg-app-card overflow-hidden"
-      style={{ width: `${W.current.t}px` }}
-    >
+    <div ref={dockRef} className="relative h-[68px] rounded-[34px] bg-app-card overflow-hidden">
       <div
         className="absolute inset-0 flex gap-1 items-center justify-center"
         onPointerDown={onPointerDown}
@@ -230,10 +228,11 @@ export function RubberDock({ items }: RubberDockProps) {
             <button
               key={item.href}
               onClick={() => onClick(i)}
-              className="w-14 h-14 flex items-center justify-center rounded-full text-text-muted"
+              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-full text-text-muted"
               aria-label={item.label}
             >
-              <Icon size={22} />
+              <Icon size={20} />
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
             </button>
           )
         })}
@@ -256,9 +255,10 @@ export function RubberDock({ items }: RubberDockProps) {
           return (
             <div
               key={item.href}
-              className="w-14 h-14 flex items-center justify-center text-brand-action-text"
+              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 text-brand-action-text"
             >
-              <Icon size={22} />
+              <Icon size={20} />
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
             </div>
           )
         })}
