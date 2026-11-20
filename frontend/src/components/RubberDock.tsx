@@ -18,6 +18,7 @@ interface RubberDockProps {
 
 const TAB = 64 // Ширина одной кнопки
 const GAP = 4 // Отступ между кнопками
+const PAD = 4 // = p-1 в Tailwind (1 unit = 4px)
 
 export function RubberDock({ items, onSelect }: RubberDockProps) {
   const pathname = usePathname()
@@ -34,7 +35,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
   )
 
   // Центр i-й кнопки относительно начала контейнера
-  const cx = useCallback((i: number) => i * (TAB + GAP) + TAB / 2, [])
+  const cx = useCallback((i: number) => PAD + i * (TAB + GAP) + TAB / 2, [])
 
   const dockRef = useRef<HTMLDivElement | null>(null)
   const indicatorRef = useRef<HTMLDivElement | null>(null)
@@ -125,8 +126,9 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
 
         // Высота: если ширина = ширине кнопки, то высота = высоте кнопки (64).
         // Если шире — плавно уменьшаем до 48, чтобы сохранить "капсулу".
-        const ih = iw >= TAB ? 64 : Math.max(48, 64 * (iw / TAB))
-        const topOffset = (64 - ih) / 2
+        const trackH = 64 - 2 * PAD // 56
+        const ih = iw >= TAB ? trackH : Math.max(trackH - 8, trackH * (iw / TAB))
+        const topOffset = PAD + (trackH - ih) / 2 // +PAD, т.к. трек начинается с 4px
 
         ind.style.width = `${iw}px`
         ind.style.height = `${ih}px`
@@ -134,7 +136,9 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
 
         // Клип верхнего слоя
-        top.style.clipPath = `inset(${topOffset}px ${tw - l - iw}px ${64 - topOffset - ih}px ${l}px round ${ih / 2}px)`
+        const lLocal = l - PAD // переводим из координат дока в координаты трека
+        const iwLocal = iw
+        top.style.clipPath = `inset(${(trackH - ih) / 2}px ${tw - lLocal - iwLocal}px ${(trackH - ih) / 2}px ${lLocal}px round ${ih / 2}px)`
 
         dock.style.transform = `translateX(${nudge.current.x}px)`
       }
@@ -232,7 +236,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex justify-center pointer-events-none pb-[env(safe-area-inset-bottom)]">
       <div
         ref={dockRef}
-        style={{ width: tw }}
+        style={{ width: tw + 2 * PAD }}
         className="relative flex h-16 items-center gap-1 rounded-full border border-app-surface/60 bg-app-card/90 shadow-[var(--shadow-soft)] backdrop-blur-xl select-none pointer-events-auto touch-none"
         onPointerDown={onDown}
         onPointerMove={onMove}
@@ -265,8 +269,11 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         {/* Слой белых иконок (клипается по индикатору) */}
         <div
           ref={topIconsRef}
-          style={{ clipPath: "inset(0 100% 0 0 round 9999px)", willChange: "clip-path" }}
-          className="pointer-events-none absolute inset-0 z-20 flex items-center gap-1 text-brand-action-text"
+          style={{
+            clipPath: "inset(0 100% 0 0 round 9999px)",
+            willChange: "clip-path",
+          }}
+          className="pointer-events-none absolute inset-1 z-20 flex items-center gap-1 text-brand-action-text"
         >
           {items.map((item) => {
             const Icon = item.icon
