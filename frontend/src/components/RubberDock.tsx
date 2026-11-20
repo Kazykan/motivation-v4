@@ -231,7 +231,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
       <div
         ref={dockRef}
         style={{ width: tw + 2 * PAD }}
-        className="relative flex h-16 items-center gap-1 rounded-full border border-app-surface/60 bg-app-card/90 p-1 shadow-[var(--shadow-soft)] backdrop-blur-xl select-none pointer-events-auto touch-none"
+        className="relative flex h-16 items-center gap-1 rounded-full ring-1 ring-inset ring-app-surface/60 bg-app-card/90 p-1 shadow-[var(--shadow-soft)] backdrop-blur-xl select-none pointer-events-auto touch-none"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -256,7 +256,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         {/* Зелёный индикатор — left-0 top-0 = padding-box */}
         <div
           ref={indicatorRef}
-          className="pointer-events-none absolute left-0 top-0 rounded-full bg-brand-action"
+          className="pointer-events-none absolute left-1 top-1 rounded-full bg-brand-action"
           style={{ willChange: "transform, width, height" }}
         />
 
