@@ -122,20 +122,20 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
         if (r < l) [l, r] = [r, l]
 
         const iw = Math.max(r - l, 24)
-        // Высота индикатора (чтобы не вылезал за пределы)
-        const ih = Math.min(48, 64 * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1))
-        const topOffset = (64 - ih) / 2 // (высота контейнера - высота индикатора)/2
 
-        // Ставим размеры и позицию индикатора
+        // Высота: если ширина = ширине кнопки, то высота = высоте кнопки (64).
+        // Если шире — плавно уменьшаем до 48, чтобы сохранить "капсулу".
+        const ih = iw >= TAB ? 64 : Math.max(48, 64 * (iw / TAB))
+        const topOffset = (64 - ih) / 2
+
         ind.style.width = `${iw}px`
         ind.style.height = `${ih}px`
         ind.style.borderRadius = `${ih / 2}px`
         ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
 
-        // Клипаем верхний слой с белыми иконками
+        // Клип верхнего слоя
         top.style.clipPath = `inset(${topOffset}px ${tw - l - iw}px ${64 - topOffset - ih}px ${l}px round ${ih / 2}px)`
 
-        // Легкое покачивание всего дока
         dock.style.transform = `translateX(${nudge.current.x}px)`
       }
 
@@ -233,7 +233,7 @@ export function RubberDock({ items, onSelect }: RubberDockProps) {
       <div
         ref={dockRef}
         style={{ width: tw + 8 }}
-        className="relative h-16 flex items-center gap-1 rounded-full bg-app-bg/80 backdrop-blur-xl border border-border-default/50 p-1 shadow-lg select-none pointer-events-auto touch-none"
+        className="relative h-16 flex items-center gap-1 rounded-full bg-app-bg/80 backdrop-blur-xl border border-border-default/50 shadow-lg select-none pointer-events-auto touch-none"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
