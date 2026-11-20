@@ -222,7 +222,7 @@ export function RubberDock({ items }: RubberDockProps) {
   return (
     <div
       ref={dockRef}
-      className="relative h-[68px] rounded-[34px] bg-app-card"
+      className="relative left-1/2 h-[68px] rounded-[34px] bg-app-card"
       // Убрали инлайн-стиль width, им управляет rAF
     >
       <div
@@ -239,7 +239,7 @@ export function RubberDock({ items }: RubberDockProps) {
             <button
               key={item.href}
               onClick={() => onClick(i)}
-              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-full text-text-muted"
+              className="w-16 h-14 flex flex-col items-center justify-center gap-0.5 rounded-full text-text-muted"
               aria-label={item.label}
             >
               <Icon size={20} />

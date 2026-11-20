@@ -41,8 +41,8 @@ export function Navigation() {
 
   return (
     // Убрали внешний div с border-t, оставили один fixed-контейнер
-    <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 bg-app-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg shadow-[var(--shadow-float)]">
-      <div className="relative flex h-[76px] items-center justify-center px-4">
+    <nav className="pointer-events-none fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 pb-[env(safe-area-inset-bottom)]">
+      <div className="pointer-events-auto relative flex h-[76px] items-center justify-center px-4">
         {isSyncing && (
           <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
             <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />

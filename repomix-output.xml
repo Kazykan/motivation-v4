@@ -167,6 +167,7 @@ frontend/src/components/parent/WeeklyReportCard.tsx
 frontend/src/components/ParentReviewCard.tsx
 frontend/src/components/ProfileMenuSheet.tsx
 frontend/src/components/PushNotificationSettings.tsx
+frontend/src/components/RubberDock.tsx
 frontend/src/components/TaskCard.tsx
 frontend/src/components/TaskCardForParent.tsx
 frontend/src/components/TaskFormSheet.tsx
@@ -200,6 +201,7 @@ frontend/src/lib/bffAuth.ts
 frontend/src/lib/dates.ts
 frontend/src/lib/debug.ts
 frontend/src/lib/money.ts
+frontend/src/lib/motion.ts
 frontend/src/lib/onboardingContent.ts
 frontend/src/lib/session.ts
 frontend/src/lib/utils.ts
@@ -2557,6 +2559,33 @@ export function formatMoney(amount: string | number | null | undefined): string 
   const value = Number(amount ?? 0)
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value) + " ₽"
 }
+</file>
+
+<file path="frontend/src/lib/motion.ts">
+// frontend/src/lib/motion.ts
+export type SpringState = { x: number; v: number; t: number; k: number; c: number }
+
+export const S = (x: number, k = 400, c = 30): SpringState => ({ x, v: 0, t: x, k, c })
+
+export const tune = (s: SpringState, k: number, c: number, reduceMotion = false) => {
+  s.k = k
+  s.c = reduceMotion ? 2 * Math.sqrt(k) : c
+}
+
+export const step = (s: SpringState, dt: number) => {
+  const a = -s.k * (s.x - s.t) - s.c * s.v
+  s.v += a * dt
+  s.x += s.v * dt
+}
+
+export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+
+// Читаем токены из CSS (--dock-lead и т.д.)
+export const token = (name: string, fallback = "") =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+
+export const spring = (name: string, fallback: string): [number, number] =>
+  token(name, fallback).split(/\s+/).map(Number) as [number, number]
 </file>
 
 <file path="frontend/src/lib/onboardingContent.ts">
@@ -7016,6 +7045,289 @@ export function PushNotificationSettings() {
 }
 </file>
 
+<file path="frontend/src/components/RubberDock.tsx">
+"use client"
+
+import { useEffect, useRef, useCallback } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { S, tune, step, clamp, spring } from "@/lib/motion"
+
+export interface DockItem {
+  href: string
+  label: string
+  icon: React.ComponentType<{ size?: number; className?: string }>
+}
+
+interface RubberDockProps {
+  items: DockItem[]
+}
+
+const TAB = 64 // Увеличили для подписей
+const GAP = 4
+
+export function RubberDock({ items }: RubberDockProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const reduceMotion = useRef(false)
+  const N = items.length
+
+  const dockRef = useRef<HTMLDivElement>(null)
+  const indicatorRef = useRef<HTMLDivElement>(null)
+  const topIconsRef = useRef<HTMLDivElement>(null)
+
+  const cx = useCallback((i: number) => TAB / 2 + i * (TAB + GAP), [])
+  const TW = N * TAB + (N - 1) * GAP
+
+  const L = useRef(S(cx(0) - TAB / 2))
+  const R = useRef(S(cx(0) + TAB / 2))
+  const nudge = useRef(S(0))
+  const pops = useRef(items.map(() => S(1)))
+  const W = useRef(S(TW)) // Исправлено: убрали +12
+
+  const drag = useRef<{
+    id: number | null
+    x0: number
+    last: number
+    live: boolean
+    dir: number
+  } | null>(null)
+  const suppressClick = useRef(false)
+
+  const tokens = useRef({
+    lead: spring("--dock-lead", "640 38"),
+    trail: spring("--dock-trail", "150 16"),
+    dragLead: spring("--dock-drag-lead", "1100 56"),
+    dragTrail: spring("--dock-drag-trail", "320 26"),
+  })
+
+  // Активный таб
+  const activeIndex = items.findIndex((item) => pathname.startsWith(item.href))
+  const active = activeIndex >= 0 ? activeIndex : 0
+
+  const moveTo = useCallback((center: number, dir: number, isDrag = false) => {
+    const { lead, trail, dragLead, dragTrail } = tokens.current
+    const leadSpring = isDrag ? dragLead : lead
+    const trailSpring = isDrag ? dragTrail : trail
+
+    if (dir === 0) {
+      tune(L.current, 600, 44, reduceMotion.current)
+      tune(R.current, 600, 44, reduceMotion.current)
+    } else {
+      const [leftSpring, rightSpring] =
+        dir > 0 ? [trailSpring, leadSpring] : [leadSpring, trailSpring]
+      tune(L.current, ...leftSpring, reduceMotion.current)
+      tune(R.current, ...rightSpring, reduceMotion.current)
+    }
+    L.current.t = center - TAB / 2
+    R.current.t = center + TAB / 2
+  }, [])
+
+  // Начальная установка
+  useEffect(() => {
+    const match = window.matchMedia("(prefers-reduced-motion: reduce)")
+    reduceMotion.current = match.matches
+
+    pops.current = items.map(() => S(1))
+    const center = cx(active)
+    L.current.x = center - TAB / 2
+    R.current.x = center + TAB / 2
+    L.current.t = L.current.x
+    R.current.t = R.current.x
+    W.current.t = TW // Исправлено: убрали +12
+    nudge.current.v = 5
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length])
+
+  // rAF-цикл
+  useEffect(() => {
+    let raf: number
+    let lastTime = performance.now()
+
+    const frame = (now: number) => {
+      const dt = Math.min((now - lastTime) / 1000, 1 / 30)
+      lastTime = now
+
+      const sub = 4
+      for (let k = 0; k < sub; k++) {
+        const d = dt / sub
+        step(L.current, d)
+        step(R.current, d)
+        step(nudge.current, d)
+        step(W.current, d)
+        pops.current.forEach((p) => step(p, d))
+      }
+
+      const ind = indicatorRef.current
+      const dock = dockRef.current
+      const top = topIconsRef.current
+
+      if (ind && dock && top) {
+        let l = L.current.x
+        let r = R.current.x
+        if (r < l) [l, r] = [r, l]
+
+        const iw = Math.max(r - l, 24)
+        // Ограничиваем высоту, чтобы не обрезать текст
+        const ih = Math.min(TAB, TAB * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1))
+        const topOffset = (TAB - ih) / 2
+
+        ind.style.width = `${iw}px`
+        ind.style.height = `${ih}px`
+        ind.style.borderRadius = `${ih / 2}px`
+        ind.style.transform = `translate3d(${l}px, ${topOffset}px, 0)`
+
+        top.style.clipPath = `inset(${topOffset}px ${TW - l - iw}px ${TAB - topOffset - ih}px ${l}px round ${ih / 2}px)`
+
+        // Управление шириной и позицией дока
+        dock.style.width = `${W.current.x}px`
+        dock.style.transform = `translateX(calc(-50% + ${nudge.current.x}px))`
+      }
+
+      raf = requestAnimationFrame(frame)
+    }
+
+    raf = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(raf)
+  }, [TW])
+
+  const rubber = (x: number, min: number, max: number, d = 46) =>
+    x < min
+      ? min - (1 - 1 / (((min - x) * 0.55) / d + 1)) * d
+      : x > max
+        ? max + (1 - 1 / (((x - max) * 0.55) / d + 1)) * d
+        : x
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    drag.current = {
+      id: e.pointerId,
+      x0: e.clientX,
+      last: e.clientX,
+      live: false,
+      dir: 0,
+    }
+  }
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id) return
+
+    if (!d.live && Math.abs(e.clientX - d.x0) > 4) {
+      d.live = true
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    }
+    if (!d.live) return
+
+    const delta = e.clientX - d.last
+    d.last = e.clientX
+    if (Math.abs(delta) > 0.5) d.dir = Math.sign(delta)
+
+    const rect = dockRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const localX = e.clientX - (rect.left + rect.width / 2) + TW / 2
+    const clamped = rubber(localX, cx(0), cx(N - 1))
+
+    moveTo(clamped, d.dir, true)
+    nudge.current.t = (clamped - clamp(clamped, cx(0), cx(N - 1))) * 0.35
+  }
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const d = drag.current
+    if (!d || e.pointerId !== d.id) return
+
+    if (d.live) {
+      const center = (L.current.t + R.current.t) / 2
+      nudge.current.t = 0
+      const newIndex = Math.round((center - cx(0)) / (TAB + GAP) + d.dir * 0.18)
+      const clamped = clamp(newIndex, 0, N - 1)
+
+      if (clamped !== active) router.push(items[clamped].href)
+
+      suppressClick.current = true
+      setTimeout(() => (suppressClick.current = false), 0)
+    }
+    drag.current = null
+  }
+
+  // Исправлено: отдельная функция для отмены
+  const onPointerCancel = () => {
+    drag.current = null
+    nudge.current.t = 0
+    moveTo(cx(active), 0)
+  }
+
+  const onClick = (index: number) => {
+    if (suppressClick.current) return
+    if (index !== active) router.push(items[index].href)
+  }
+
+  useEffect(() => {
+    const dir = Math.sign(cx(active) - (L.current.x + R.current.x) / 2)
+    moveTo(cx(active), dir)
+    if (pops.current[active]) pops.current[active].v -= 3.2
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active])
+
+  return (
+    <div
+      ref={dockRef}
+      className="relative h-[68px] rounded-[34px] bg-app-card"
+      // Убрали инлайн-стиль width, им управляет rAF
+    >
+      <div
+        // Исправлено: justify-start вместо justify-center
+        className="absolute inset-0 flex gap-1 items-center justify-start"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
+        {items.map((item, i) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.href}
+              onClick={() => onClick(i)}
+              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 rounded-full text-text-muted"
+              aria-label={item.label}
+            >
+              <Icon size={20} />
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div
+        ref={indicatorRef}
+        className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
+        // Убрали инлайн-стили width/height, ими управляет rAF
+      />
+
+      <div
+        ref={topIconsRef}
+        // Исправлено: justify-start вместо justify-center
+        className="absolute inset-0 flex gap-1 items-center justify-start pointer-events-none"
+        aria-hidden="true"
+        style={{ clipPath: "inset(0 100% 0 0 round 28px)" }}
+      >
+        {items.map((item) => {
+          const Icon = item.icon
+          return (
+            <div
+              key={item.href}
+              className="w-14 h-14 flex flex-col items-center justify-center gap-0.5 text-brand-action-text"
+            >
+              <Icon size={20} />
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+</file>
+
 <file path="frontend/src/components/TaskCard.tsx">
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8245,55 +8557,6 @@ export function WeekNavigator({
 }
 </file>
 
-<file path="frontend/src/components/AppShell.tsx">
-"use client"
-
-import { useEffect, useState } from "react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { Navigation } from "@/components/Navigation"
-import { ProfileMenuSheet } from "./ProfileMenuSheet"
-
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient())
-
-  useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp
-    if (tg) {
-      try {
-        tg.ready()
-        tg.expand()
-      } catch {}
-    }
-  }, [])
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
-        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
-        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
-          <span
-            className="font-brand text-text-main leading-none select-none"
-            style={{ fontSize: "clamp(20px, 5.5vw, 28px)" }}
-            aria-label="Motivation"
-          >
-            Motivation
-          </span>
-          <ProfileMenuSheet />
-        </header>
-
-        {/* Контент — px-4 здесь, один раз */}
-        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(56px+env(safe-area-inset-bottom))]">
-          {children}
-        </main>
-      </div>
-
-      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
-      <Navigation />
-    </QueryClientProvider>
-  )
-}
-</file>
-
 <file path="frontend/src/components/LogHistoryViewer.tsx">
 "use client"
 
@@ -8825,117 +9088,6 @@ export const useLogSyncStore = create<LogSyncState>((set, get) => ({
 
   clearError: () => set({ lastError: null }),
 }))
-</file>
-
-<file path="backend/motivation/authentication.py">
-# backend/motivation/authentication.py
-import base64
-import hmac
-
-from django.conf import settings
-from django.contrib.auth import get_user_model
-from rest_framework import authentication, exceptions
-
-from init_data_py import errors as init_errors
-from init_data_py import validate_by_hash
-
-User = get_user_model()
-
-
-class BFFServiceAuthentication(authentication.BaseAuthentication):
-    """
-    Basic-auth для доверенного сервиса (Next.js BFF).
-
-    После проверки Basic-кредов:
-    - если пришёл X-BFF-User-Id — аутентифицируем этого пользователя;
-    - иначе возвращаем (None, "bff-service") — пропуск для сервисных вызовов
-      (например, эндпоинт /auth/oauth/, где пользователь ещё не определён).
-    """
-
-    def authenticate(self, request):
-        auth = request.META.get("HTTP_AUTHORIZATION", "")
-        if not auth.lower().startswith("basic "):
-            return None
-
-        expected_user = settings.BFF_SERVICE_USERNAME
-        expected_pass = settings.BFF_SERVICE_PASSWORD
-        if not expected_user or not expected_pass:
-            raise exceptions.AuthenticationFailed(
-                "Сервисные креды не сконфигурированы."
-            )
-
-        try:
-            decoded = base64.b64decode(auth.split(" ", 1)[1]).decode()
-            username, password = decoded.split(":", 1)
-        except Exception:
-            raise exceptions.AuthenticationFailed("Некорректный Basic-заголовок.")
-
-        if not (
-            hmac.compare_digest(username, expected_user)
-            and hmac.compare_digest(password, expected_pass)
-        ):
-            raise exceptions.AuthenticationFailed("Неверные сервисные креды.")
-
-        # OAuth-сессия BFF: поднимаем реального пользователя.
-        bff_user_id = request.META.get("HTTP_X_BFF_USER_ID")
-
-        if bff_user_id:
-            try:
-                user = User.objects.get(id=int(bff_user_id))
-                return (user, "bff-service")
-            except (User.DoesNotExist, ValueError):
-                raise exceptions.AuthenticationFailed("Пользователь BFF не найден.")
-
-        # Без пользователя — только сервисный пропуск.
-        return (None, "bff-service")
-
-
-class TelegramInitDataAuthentication(authentication.BaseAuthentication):
-    keyword = "tma"
-
-    def authenticate(self, request):
-        raw = request.META.get("HTTP_X_TELEGRAM_INIT_DATA")
-        if not raw:
-            auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-            if auth_header.lower().startswith(self.keyword + " "):
-                raw = auth_header[len(self.keyword) + 1 :]
-
-        if not raw:
-            return None
-
-        bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
-        if not bot_token:
-            raise exceptions.AuthenticationFailed("TELEGRAM_BOT_TOKEN не задан.")
-
-        try:
-            init_data = validate_by_hash(raw, bot_token, expires_in=86400)
-        except init_errors.ExpiredError:
-            raise exceptions.AuthenticationFailed("initData устарел.")
-        except init_errors.InvalidInitDataError as e:
-            raise exceptions.AuthenticationFailed(f"Невалидный initData: {e}")
-
-        tg_user = init_data.user
-        if not tg_user:
-            raise exceptions.AuthenticationFailed("В initData нет user.")
-
-        # photo_url есть не всегда: только при открытии через attachment menu и т.п.
-        tg_photo_url = getattr(tg_user, "photo_url", None) or None
-
-        user, created = User.objects.get_or_create(
-            telegram_id=tg_user.id,
-            defaults={
-                "username": f"tg_{tg_user.id}",
-                "first_name": tg_user.first_name or "",
-                "last_name": tg_user.last_name or "",
-                "avatar_url": tg_photo_url,
-                "role": "",  # пустая роль = не онборджен
-            },
-        )
-        if not created and tg_photo_url and user.avatar_url != tg_photo_url:
-            user.avatar_url = tg_photo_url
-            user.save(update_fields=["avatar_url"])
-
-        return (user, None)
 </file>
 
 <file path="backend/pyproject.toml">
@@ -9796,6 +9948,55 @@ export default function ParentTasksPage() {
 }
 </file>
 
+<file path="frontend/src/components/AppShell.tsx">
+"use client"
+
+import { useEffect, useState } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Navigation } from "@/components/Navigation"
+import { ProfileMenuSheet } from "./ProfileMenuSheet"
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient())
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp
+    if (tg) {
+      try {
+        tg.ready()
+        tg.expand()
+      } catch {}
+    }
+  }, [])
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-app-bg">
+        {/* Шапка — sticky, sibling main, без двойных паддингов, z-10 */}
+        <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-app-bg/80 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur">
+          <span
+            className="font-brand text-text-main leading-none select-none"
+            style={{ fontSize: "clamp(20px, 5.5vw, 28px)" }}
+            aria-label="Motivation"
+          >
+            Motivation
+          </span>
+          <ProfileMenuSheet />
+        </header>
+
+        {/* Контент — px-4 здесь, один раз */}
+        <main className="flex-1 overflow-y-auto px-4 pt-2 pb-[calc(76px+env(safe-area-inset-bottom)+16px)]">
+          {children}
+        </main>
+      </div>
+
+      {/* Navigation — в том же max-w-md, fixed bottom, z-20 */}
+      <Navigation />
+    </QueryClientProvider>
+  )
+}
+</file>
+
 <file path="frontend/src/components/ChildCard.tsx">
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -10231,6 +10432,117 @@ export function TaskFormSheet({
     </Dialog>
   )
 }
+</file>
+
+<file path="backend/motivation/authentication.py">
+# backend/motivation/authentication.py
+import base64
+import hmac
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from rest_framework import authentication, exceptions
+
+from init_data_py import errors as init_errors
+from init_data_py import validate_by_hash
+
+User = get_user_model()
+
+
+class BFFServiceAuthentication(authentication.BaseAuthentication):
+    """
+    Basic-auth для доверенного сервиса (Next.js BFF).
+
+    После проверки Basic-кредов:
+    - если пришёл X-BFF-User-Id — аутентифицируем этого пользователя;
+    - иначе возвращаем (None, "bff-service") — пропуск для сервисных вызовов
+      (например, эндпоинт /auth/oauth/, где пользователь ещё не определён).
+    """
+
+    def authenticate(self, request):
+        auth = request.META.get("HTTP_AUTHORIZATION", "")
+        if not auth.lower().startswith("basic "):
+            return None
+
+        expected_user = settings.BFF_SERVICE_USERNAME
+        expected_pass = settings.BFF_SERVICE_PASSWORD
+        if not expected_user or not expected_pass:
+            raise exceptions.AuthenticationFailed(
+                "Сервисные креды не сконфигурированы."
+            )
+
+        try:
+            decoded = base64.b64decode(auth.split(" ", 1)[1]).decode()
+            username, password = decoded.split(":", 1)
+        except Exception:
+            raise exceptions.AuthenticationFailed("Некорректный Basic-заголовок.")
+
+        if not (
+            hmac.compare_digest(username, expected_user)
+            and hmac.compare_digest(password, expected_pass)
+        ):
+            raise exceptions.AuthenticationFailed("Неверные сервисные креды.")
+
+        # OAuth-сессия BFF: поднимаем реального пользователя.
+        bff_user_id = request.META.get("HTTP_X_BFF_USER_ID")
+
+        if bff_user_id:
+            try:
+                user = User.objects.get(id=int(bff_user_id))
+                return (user, "bff-session")
+            except (User.DoesNotExist, ValueError):
+                raise exceptions.AuthenticationFailed("Пользователь BFF не найден.")
+
+        # Без пользователя — только сервисный пропуск.
+        return (None, "bff-service")
+
+
+class TelegramInitDataAuthentication(authentication.BaseAuthentication):
+    keyword = "tma"
+
+    def authenticate(self, request):
+        raw = request.META.get("HTTP_X_TELEGRAM_INIT_DATA")
+        if not raw:
+            auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+            if auth_header.lower().startswith(self.keyword + " "):
+                raw = auth_header[len(self.keyword) + 1 :]
+
+        if not raw:
+            return None
+
+        bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
+        if not bot_token:
+            raise exceptions.AuthenticationFailed("TELEGRAM_BOT_TOKEN не задан.")
+
+        try:
+            init_data = validate_by_hash(raw, bot_token, expires_in=86400)
+        except init_errors.ExpiredError:
+            raise exceptions.AuthenticationFailed("initData устарел.")
+        except init_errors.InvalidInitDataError as e:
+            raise exceptions.AuthenticationFailed(f"Невалидный initData: {e}")
+
+        tg_user = init_data.user
+        if not tg_user:
+            raise exceptions.AuthenticationFailed("В initData нет user.")
+
+        # photo_url есть не всегда: только при открытии через attachment menu и т.п.
+        tg_photo_url = getattr(tg_user, "photo_url", None) or None
+
+        user, created = User.objects.get_or_create(
+            telegram_id=tg_user.id,
+            defaults={
+                "username": f"tg_{tg_user.id}",
+                "first_name": tg_user.first_name or "",
+                "last_name": tg_user.last_name or "",
+                "avatar_url": tg_photo_url,
+                "role": "",  # пустая роль = не онборджен
+            },
+        )
+        if not created and tg_photo_url and user.avatar_url != tg_photo_url:
+            user.avatar_url = tg_photo_url
+            user.save(update_fields=["avatar_url"])
+
+        return (user, None)
 </file>
 
 <file path="frontend/src/app/child/tasks/page.tsx">
@@ -11627,103 +11939,6 @@ export default function ParentReportsPage() {
 }
 </file>
 
-<file path="frontend/src/components/Navigation.tsx">
-"use client"
-
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import {
-  Users,
-  CheckSquare,
-  ClipboardCheck,
-  FileText,
-  Wallet,
-  User as UserIcon,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { useLogSyncStore } from "@/store/useLogSyncStore"
-import { useMe } from "@/hooks/useMe"
-
-export function Navigation() {
-  const pathname = usePathname()
-  const { me, ready } = useMe()
-  const isSyncing = useLogSyncStore((state) => state.isSyncing)
-  const lastError = useLogSyncStore((s) => s.lastError)
-  const clearError = useLogSyncStore((s) => s.clearError)
-
-  if (!ready || !me?.onboarded) return null
-
-  const role = me.role
-
-  const parentNav = [
-    { label: "Дети", href: "/parent/children", icon: Users },
-    { label: "Задания", href: "/parent/tasks", icon: CheckSquare },
-    { label: "Проверка", href: "/parent/review", icon: ClipboardCheck },
-    { label: "Отчеты", href: "/parent/reports", icon: FileText },
-  ]
-
-  const childNav = [
-    { label: "Задания", href: "/child/tasks", icon: CheckSquare },
-    { label: "Кошелёк", href: "/child/balance", icon: Wallet },
-    { label: "Профиль", href: "/child/profile", icon: UserIcon },
-  ]
-
-  const currentNav = role === "PARENT" ? parentNav : childNav
-
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-app-surface bg-app-card/90 backdrop-blur-lg">
-      <nav className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-app-bg pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-float)]">
-        <div className="flex h-14 items-center justify-around px-4">
-          {isSyncing && (
-            <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
-              <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
-              Сохранение...
-            </div>
-          )}
-          {lastError && (
-            <button
-              onClick={clearError}
-              className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
-            >
-              {lastError}
-            </button>
-          )}
-
-          {currentNav.map((item) => {
-            const Icon = item.icon
-            const isActive = pathname === item.href
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex flex-col items-center gap-1 text-[11px] font-medium transition-all",
-                  isActive
-                    ? "text-text-main font-semibold"
-                    : "text-text-muted hover:text-text-main",
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-2xl transition-all",
-                    isActive
-                      ? "bg-brand-action text-brand-action-text shadow-md"
-                      : "bg-transparent",
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                </div>
-                <span>{item.label}</span>
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
-    </div>
-  )
-}
-</file>
-
 <file path="backend/motivation/services/task_logs.py">
 # backend/motivation/services/task_logs.py
 from datetime import timedelta
@@ -13094,6 +13309,74 @@ class PushSubscription(models.Model):
 
     def __str__(self):
         return f"Push для {self.user.username} ({self.pk})"
+</file>
+
+<file path="frontend/src/components/Navigation.tsx">
+"use client"
+
+import { usePathname } from "next/navigation"
+import {
+  Users,
+  CheckSquare,
+  ClipboardCheck,
+  FileText,
+  Wallet,
+  User as UserIcon,
+} from "lucide-react"
+import { RubberDock, DockItem } from "@/components/RubberDock"
+import { useLogSyncStore } from "@/store/useLogSyncStore"
+import { useMe } from "@/hooks/useMe"
+
+export function Navigation() {
+  const pathname = usePathname()
+  const { me, ready } = useMe()
+  const isSyncing = useLogSyncStore((state) => state.isSyncing)
+  const lastError = useLogSyncStore((s) => s.lastError)
+  const clearError = useLogSyncStore((s) => s.clearError)
+
+  if (!ready || !me?.onboarded) return null
+
+  const role = me.role
+
+  const parentNav: DockItem[] = [
+    { label: "Дети", href: "/parent/children", icon: Users },
+    { label: "Задания", href: "/parent/tasks", icon: CheckSquare },
+    { label: "Проверка", href: "/parent/review", icon: ClipboardCheck },
+    { label: "Отчеты", href: "/parent/reports", icon: FileText },
+  ]
+
+  const childNav: DockItem[] = [
+    { label: "Задания", href: "/child/tasks", icon: CheckSquare },
+    { label: "Кошелёк", href: "/child/balance", icon: Wallet },
+    { label: "Профиль", href: "/child/profile", icon: UserIcon },
+  ]
+
+  const currentNav = role === "PARENT" ? parentNav : childNav
+
+  return (
+    // Убрали внешний div с border-t, оставили один fixed-контейнер
+    <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 bg-app-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg shadow-[var(--shadow-float)]">
+      <div className="relative flex h-[76px] items-center justify-center px-4">
+        {isSyncing && (
+          <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
+            <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
+            Сохранение...
+          </div>
+        )}
+        {lastError && (
+          <button
+            onClick={clearError}
+            className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
+          >
+            {lastError}
+          </button>
+        )}
+
+        <RubberDock items={currentNav} />
+      </div>
+    </nav>
+  )
+}
 </file>
 
 <file path="frontend/src/app/parent/review/page.tsx">
