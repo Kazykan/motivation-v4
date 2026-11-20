@@ -52,7 +52,7 @@ class BFFServiceAuthentication(authentication.BaseAuthentication):
         if bff_user_id:
             try:
                 user = User.objects.get(id=int(bff_user_id))
-                return (user, "bff-service")
+                return (user, "bff-session")
             except (User.DoesNotExist, ValueError):
                 raise exceptions.AuthenticationFailed("Пользователь BFF не найден.")
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { S, tune, step, clamp, spring, SpringState } from "@/lib/motion"
+import { S, tune, step, clamp, spring } from "@/lib/motion"
 
 export interface DockItem {
   href: string
@@ -14,9 +14,8 @@ interface RubberDockProps {
   items: DockItem[]
 }
 
-const TAB = 56
+const TAB = 64 // Увеличили для подписей
 const GAP = 4
-const COL_H = TAB + 12
 
 export function RubberDock({ items }: RubberDockProps) {
   const router = useRouter()
@@ -35,7 +34,7 @@ export function RubberDock({ items }: RubberDockProps) {
   const R = useRef(S(cx(0) + TAB / 2))
   const nudge = useRef(S(0))
   const pops = useRef(items.map(() => S(1)))
-  const W = useRef(S(TW + 12))
+  const W = useRef(S(TW)) // Исправлено: убрали +12
 
   const drag = useRef<{
     id: number | null
@@ -53,7 +52,7 @@ export function RubberDock({ items }: RubberDockProps) {
     dragTrail: spring("--dock-drag-trail", "320 26"),
   })
 
-  // Активный таб: startsWith, чтобы /child/tasks/123 подсвечивал «Задания»
+  // Активный таб
   const activeIndex = items.findIndex((item) => pathname.startsWith(item.href))
   const active = activeIndex >= 0 ? activeIndex : 0
 
@@ -75,7 +74,7 @@ export function RubberDock({ items }: RubberDockProps) {
     R.current.t = center + TAB / 2
   }, [])
 
-  // Начальная установка при смене items (роль переключилась)
+  // Начальная установка
   useEffect(() => {
     const match = window.matchMedia("(prefers-reduced-motion: reduce)")
     reduceMotion.current = match.matches
@@ -86,7 +85,7 @@ export function RubberDock({ items }: RubberDockProps) {
     R.current.x = center + TAB / 2
     L.current.t = L.current.x
     R.current.t = R.current.x
-    W.current.t = TW + 12
+    W.current.t = TW // Исправлено: убрали +12
     nudge.current.v = 5
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length])
@@ -120,7 +119,8 @@ export function RubberDock({ items }: RubberDockProps) {
         if (r < l) [l, r] = [r, l]
 
         const iw = Math.max(r - l, 24)
-        const ih = TAB * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1)
+        // Ограничиваем высоту, чтобы не обрезать текст
+        const ih = Math.min(TAB, TAB * clamp(1 / Math.sqrt(iw / TAB), 0.66, 1.1))
         const topOffset = (TAB - ih) / 2
 
         ind.style.width = `${iw}px`
@@ -130,8 +130,8 @@ export function RubberDock({ items }: RubberDockProps) {
 
         top.style.clipPath = `inset(${topOffset}px ${TW - l - iw}px ${TAB - topOffset - ih}px ${l}px round ${ih / 2}px)`
 
+        // Управление шириной и позицией дока
         dock.style.width = `${W.current.x}px`
-
         dock.style.transform = `translateX(calc(-50% + ${nudge.current.x}px))`
       }
 
@@ -192,13 +192,19 @@ export function RubberDock({ items }: RubberDockProps) {
       const newIndex = Math.round((center - cx(0)) / (TAB + GAP) + d.dir * 0.18)
       const clamped = clamp(newIndex, 0, N - 1)
 
-      // Навигация только если таб сменился
       if (clamped !== active) router.push(items[clamped].href)
 
       suppressClick.current = true
       setTimeout(() => (suppressClick.current = false), 0)
     }
     drag.current = null
+  }
+
+  // Исправлено: отдельная функция для отмены
+  const onPointerCancel = () => {
+    drag.current = null
+    nudge.current.t = 0
+    moveTo(cx(active), 0)
   }
 
   const onClick = (index: number) => {
@@ -214,13 +220,18 @@ export function RubberDock({ items }: RubberDockProps) {
   }, [active])
 
   return (
-    <div ref={dockRef} className="relative h-[68px] rounded-[34px] bg-app-card overflow-hidden">
+    <div
+      ref={dockRef}
+      className="relative h-[68px] rounded-[34px] bg-app-card"
+      // Убрали инлайн-стиль width, им управляет rAF
+    >
       <div
-        className="absolute inset-0 flex gap-1 items-center justify-center"
+        // Исправлено: justify-start вместо justify-center
+        className="absolute inset-0 flex gap-1 items-center justify-start"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
       >
         {items.map((item, i) => {
           const Icon = item.icon
@@ -241,12 +252,13 @@ export function RubberDock({ items }: RubberDockProps) {
       <div
         ref={indicatorRef}
         className="absolute left-0 top-0 bg-brand-action rounded-full pointer-events-none"
-        style={{ width: 56, height: 56 }}
+        // Убрали инлайн-стили width/height, ими управляет rAF
       />
 
       <div
         ref={topIconsRef}
-        className="absolute inset-0 flex gap-1 items-center justify-center pointer-events-none"
+        // Исправлено: justify-start вместо justify-center
+        className="absolute inset-0 flex gap-1 items-center justify-start pointer-events-none"
         aria-hidden="true"
         style={{ clipPath: "inset(0 100% 0 0 round 28px)" }}
       >

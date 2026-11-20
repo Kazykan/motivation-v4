@@ -40,27 +40,26 @@ export function Navigation() {
   const currentNav = role === "PARENT" ? parentNav : childNav
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-app-surface bg-app-card/90 backdrop-blur-lg">
-      <nav className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-app-bg pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-float)]">
-        <div className="relative flex h-[76px] items-center justify-center px-4">
-          {isSyncing && (
-            <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
-              <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
-              Сохранение...
-            </div>
-          )}
-          {lastError && (
-            <button
-              onClick={clearError}
-              className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
-            >
-              {lastError}
-            </button>
-          )}
+    // Убрали внешний div с border-t, оставили один fixed-контейнер
+    <nav className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 bg-app-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg shadow-[var(--shadow-float)]">
+      <div className="relative flex h-[76px] items-center justify-center px-4">
+        {isSyncing && (
+          <div className="absolute right-4 -top-8 flex items-center gap-1.5 rounded-full border border-finance-pending bg-finance-pending/10 px-2.5 py-0.5 text-[10px] font-medium text-finance-pending shadow-xs">
+            <span className="h-2 w-2 animate-ping rounded-full bg-finance-pending" />
+            Сохранение...
+          </div>
+        )}
+        {lastError && (
+          <button
+            onClick={clearError}
+            className="absolute right-4 -top-14 max-w-[280px] rounded-lg border border-finance-negative/40 bg-finance-negative/10 px-3 py-1.5 text-left text-[11px] font-medium text-finance-negative shadow-sm"
+          >
+            {lastError}
+          </button>
+        )}
 
-          <RubberDock items={currentNav} />
-        </div>
-      </nav>
-    </div>
+        <RubberDock items={currentNav} />
+      </div>
+    </nav>
   )
 }
